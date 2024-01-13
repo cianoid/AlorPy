@@ -1,1 +1,12 @@
-
+[project]
+name = "alor_py"
+version = "2020.0.0"
+dynamic = ["version"]
+dependencies = [
+    "pytz",
+    "requests",
+    "websockets"
+    "pandas==2.1.4"
+]
+description = "Библиотека-обертка, которая позволяет работать с функционалом Alor OpenAPI V2 брокера Алор из Python"
+readme = "README.md"
