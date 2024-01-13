@@ -1,6 +1,5 @@
 [project]
 name = "alor_py"
-version = "2024.01.13"
 dynamic = ["version"]
 dependencies = [
     "pytz",
