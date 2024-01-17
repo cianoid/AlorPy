@@ -5,7 +5,8 @@ dependencies = [
     "pytz",
     "requests",
     "websockets",
-    "pandas==2.1.4"
+    "pandas==2.1.4",
+    "pydantic_settings==2.1.0"
 ]
 description = "Библиотека-обертка, которая позволяет работать с функционалом Alor OpenAPI V2 брокера Алор из Python"
 readme = "README.md"
