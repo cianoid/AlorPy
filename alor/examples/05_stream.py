@@ -1,7 +1,7 @@
 import time  # Подписка на события по времени
 
-from src.alor import Alor  # Работа с Alor OpenAPI V2
-from src.config import settings  # Файл конфигурации
+from alor.alor import Alor  # Работа с Alor OpenAPI V2
+from alor.config import settings  # Файл конфигурации
 
 if __name__ == "__main__":  # Точка входа при запуске этого скрипта
     ap_provider = Alor(settings.user_name, settings.refresh_token)  # Подключаемся к торговому счету

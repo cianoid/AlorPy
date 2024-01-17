@@ -1,7 +1,7 @@
 from time import sleep  # Задержка в секундах перед выполнением операций
 
-from src.alor import Alor  # Работа с Alor OpenAPI V2
-from src.config import FutServerCode, TradeServerCode, settings  # noqa
+from alor.alor import Alor  # Работа с Alor OpenAPI V2
+from alor.config import FutServerCode, TradeServerCode, settings  # noqa
 
 if __name__ == "__main__":  # Точка входа при запуске этого скрипта
     ap_provider = Alor(

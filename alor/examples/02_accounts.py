@@ -1,5 +1,5 @@
-from src.alor import Alor  # Работа с Alor OpenAPI V2
-from src.config import settings
+from alor.alor import Alor  # Работа с Alor OpenAPI V2
+from alor.config import settings
 
 
 def main():

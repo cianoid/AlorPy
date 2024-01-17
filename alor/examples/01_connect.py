@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta  # Дата и время
 
-from src.alor import Alor  # Работа с Alor OpenAPI V2
-from src.config import settings  # Файл конфигурации
+from alor.alor import Alor  # Работа с Alor OpenAPI V2
+from alor.config import settings  # Файл конфигурации
 
 
 def print_new_bar(response):
