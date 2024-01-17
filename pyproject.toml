@@ -1,5 +1,5 @@
 [project]
-name = "alor_py"
+name = "alor"
 dynamic = ["version"]
 dependencies = [
     "pytz",
