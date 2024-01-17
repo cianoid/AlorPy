@@ -1,6 +1,5 @@
 [project]
 name = "alor"
-dynamic = ["version"]
 dependencies = [
     "pytz",
     "requests",
@@ -10,3 +9,4 @@ dependencies = [
 ]
 description = "Библиотека-обертка, которая позволяет работать с функционалом Alor OpenAPI V2 брокера Алор из Python"
 readme = "README.md"
+version = "2024.01.17"
