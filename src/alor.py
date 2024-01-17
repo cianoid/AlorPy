@@ -1,26 +1,32 @@
-from math import log10  # Кол-во десятичных знаков будем получать из шага цены через десятичный логарифм
+from asyncio import CancelledError, create_task, get_event_loop, run  # Работа с асинхронными функциями
 from datetime import datetime
+from json import JSONDecodeError, dumps, loads  # Сервер WebSockets работает с JSON сообщениями
+from math import log10  # Кол-во десятичных знаков будем получать из шага цены через десятичный логарифм
+from threading import Thread  # Подписки сервера WebSockets будем получать в отдельном потоке
 from time import time_ns  # Текущее время в наносекундах, прошедших с 01.01.1970 UTC
+from uuid import uuid4  # Номера подписок должны быть уникальными во времени и пространстве
 
 import requests.adapters
 from pytz import timezone, utc  # Работаем с временнОй зоной и UTC
-from uuid import uuid4  # Номера подписок должны быть уникальными во времени и пространстве
-from json import loads, JSONDecodeError, dumps  # Сервер WebSockets работает с JSON сообщениями
-from requests import post, get, put, delete  # Запросы/ответы от сервера запросов
-from urllib3.exceptions import MaxRetryError  # Соединение с сервером не установлено за максимальное кол-во попыток подключения
-from asyncio import get_event_loop, create_task, run, CancelledError  # Работа с асинхронными функциями
-from threading import Thread  # Подписки сервера WebSockets будем получать в отдельном потоке
-from websockets import connect, ConnectionClosed  # Работа с сервером WebSockets
+from requests import delete, get, post, put  # Запросы/ответы от сервера запросов
+from urllib3.exceptions import (
+    MaxRetryError,  # Соединение с сервером не установлено за максимальное кол-во попыток подключения
+)
+from websockets import ConnectionClosed, connect  # Работа с сервером WebSockets
 
 
 # noinspection PyShadowingBuiltins
-class AlorPy:
+class Alor:
     """Работа с Alor OpenAPI V2 из Python https://alor.dev/docs"""
+
     requests.adapters.DEFAULT_RETRIES = 10  # Кол-во попыток (недокументированная команда)
     requests.adapters.DEFAULT_POOL_TIMEOUT = 10  # Таймаут запроса в секундах (недокументированная команда)
-    tz_msk = timezone('Europe/Moscow')  # Время UTC будем приводить к московскому времени
+    tz_msk = timezone("Europe/Moscow")  # Время UTC будем приводить к московскому времени
     jwt_token_ttl = 60  # Время жизни токена JWT в секундах
-    exchanges = ('MOEX', 'SPBX',)  # Биржи
+    exchanges = (
+        "MOEX",
+        "SPBX",
+    )  # Биржи
 
     def __init__(self, user_name, refresh_token, demo=False):
         """Инициализация
@@ -80,17 +86,23 @@ class AlorPy:
 
     # ClientInfo - Информация о клиенте
 
-    def get_portfolio_summary(self, portfolio, exchange, format='Simple'):
+    def get_portfolio_summary(self, portfolio, exchange, format="Simple"):
         """Получение информации о портфеле
 
         :param str portfolio: Идентификатор клиентского портфеля
         :param str exchange: Биржа 'MOEX' или 'SPBX'
         :param str format: Формат принимаемых данных 'Simple', 'Slim', 'Heavy'
         """
-        params = {'format': format}
-        return self.check_result(get(url=f'{self.api_server}/md/v2/clients/{exchange}/{portfolio}/summary', params=params, headers=self.get_headers()))
+        params = {"format": format}
+        return self.check_result(
+            get(
+                url=f"{self.api_server}/md/v2/clients/{exchange}/{portfolio}/summary",
+                params=params,
+                headers=self.get_headers(),
+            )
+        )
 
-    def get_positions(self, portfolio, exchange, without_currency=False, format='Simple'):
+    def get_positions(self, portfolio, exchange, without_currency=False, format="Simple"):
         """Получение информации о позициях
 
         :param str portfolio: Идентификатор клиентского портфеля
@@ -98,10 +110,16 @@ class AlorPy:
         :param bool without_currency: Исключить из ответа все денежные инструменты, по умолчанию false
         :param str format: Формат принимаемых данных 'Simple', 'Slim', 'Heavy'
         """
-        params = {'withoutCurrency': without_currency, 'format': format}
-        return self.check_result(get(url=f'{self.api_server}/md/v2/Clients/{exchange}/{portfolio}/positions', params=params, headers=self.get_headers()))
+        params = {"withoutCurrency": without_currency, "format": format}
+        return self.check_result(
+            get(
+                url=f"{self.api_server}/md/v2/Clients/{exchange}/{portfolio}/positions",
+                params=params,
+                headers=self.get_headers(),
+            )
+        )
 
-    def get_position(self, portfolio, exchange, symbol, format='Simple'):
+    def get_position(self, portfolio, exchange, symbol, format="Simple"):
         """Получение информации о позициях выбранного инструмента
 
         :param str portfolio: Идентификатор клиентского портфеля
@@ -109,20 +127,32 @@ class AlorPy:
         :param str symbol: Тикер
         :param str format: Формат принимаемых данных 'Simple', 'Slim', 'Heavy'
         """
-        params = {'format': format}
-        return self.check_result(get(url=f'{self.api_server}/md/v2/Clients/{exchange}/{portfolio}/positions/{symbol}', params=params, headers=self.get_headers()))
+        params = {"format": format}
+        return self.check_result(
+            get(
+                url=f"{self.api_server}/md/v2/Clients/{exchange}/{portfolio}/positions/{symbol}",
+                params=params,
+                headers=self.get_headers(),
+            )
+        )
 
-    def get_trades(self, portfolio, exchange, format='Simple'):
+    def get_trades(self, portfolio, exchange, format="Simple"):
         """Получение информации о сделках
 
         :param str portfolio: Идентификатор клиентского портфеля
         :param str exchange: Биржа 'MOEX' или 'SPBX'
         :param str format: Формат принимаемых данных 'Simple', 'Slim', 'Heavy'
         """
-        params = {'format': format}
-        return self.check_result(get(url=f'{self.api_server}/md/v2/Clients/{exchange}/{portfolio}/trades', params=params, headers=self.get_headers()))
+        params = {"format": format}
+        return self.check_result(
+            get(
+                url=f"{self.api_server}/md/v2/Clients/{exchange}/{portfolio}/trades",
+                params=params,
+                headers=self.get_headers(),
+            )
+        )
 
-    def get_trade(self, portfolio, exchange, symbol, format='Simple'):
+    def get_trade(self, portfolio, exchange, symbol, format="Simple"):
         """Получение информации о сделках по выбранному инструменту
 
         :param str portfolio: Идентификатор клиентского портфеля
@@ -130,30 +160,50 @@ class AlorPy:
         :param str symbol: Тикер
         :param str format: Формат принимаемых данных 'Simple', 'Slim', 'Heavy'
         """
-        params = {'format': format}
-        return self.check_result(get(url=f'{self.api_server}/md/v2/Clients/{exchange}/{portfolio}/{symbol}/trades', params=params, headers=self.get_headers()))
+        params = {"format": format}
+        return self.check_result(
+            get(
+                url=f"{self.api_server}/md/v2/Clients/{exchange}/{portfolio}/{symbol}/trades",
+                params=params,
+                headers=self.get_headers(),
+            )
+        )
 
-    def get_forts_risk(self, portfolio, exchange, format='Simple'):
+    def get_forts_risk(self, portfolio, exchange, format="Simple"):
         """Получение информации о рисках на срочном рынке
 
         :param str portfolio: Идентификатор клиентского портфеля
         :param str exchange: Биржа 'MOEX' или 'SPBX'
         :param str format: Формат принимаемых данных 'Simple', 'Slim', 'Heavy'
         """
-        params = {'format': format}
-        return self.check_result(get(url=f'{self.api_server}/md/v2/Clients/{exchange}/{portfolio}/fortsrisk', params=params, headers=self.get_headers()))
+        params = {"format": format}
+        return self.check_result(
+            get(
+                url=f"{self.api_server}/md/v2/Clients/{exchange}/{portfolio}/fortsrisk",
+                params=params,
+                headers=self.get_headers(),
+            )
+        )
 
-    def get_risk(self, portfolio, exchange, format='Simple'):
+    def get_risk(self, portfolio, exchange, format="Simple"):
         """Получение информации о рисках
 
         :param str portfolio: Идентификатор клиентского портфеля
         :param str exchange: Биржа 'MOEX' или 'SPBX'
         :param str format: Формат принимаемых данных 'Simple', 'Slim', 'Heavy'
         """
-        params = {'format': format}
-        return self.check_result(get(url=f'{self.api_server}/md/v2/Clients/{exchange}/{portfolio}/risk', params=params, headers=self.get_headers()))
+        params = {"format": format}
+        return self.check_result(
+            get(
+                url=f"{self.api_server}/md/v2/Clients/{exchange}/{portfolio}/risk",
+                params=params,
+                headers=self.get_headers(),
+            )
+        )
 
-    def get_trades_history(self, portfolio, exchange, date_from=None, id_from=None, limit=None, descending=None, format='Simple'):
+    def get_trades_history(
+        self, portfolio, exchange, date_from=None, id_from=None, limit=None, descending=None, format="Simple"
+    ):
         """Получение истории сделок
 
         :param str portfolio: Идентификатор клиентского портфеля
@@ -164,20 +214,30 @@ class AlorPy:
         :param bool descending: Флаг обратной сортировки выдачи
         :param str format: Формат принимаемых данных 'Simple', 'Slim', 'Heavy'
         """
-        params = {'format': format}
+        params = {"format": format}
         if date_from:
-            params['dateFrom'] = date_from
+            params["dateFrom"] = date_from
         if id_from:
-            params['from'] = id_from
+            params["from"] = id_from
         if limit:
-            params['limit'] = limit
+            params["limit"] = limit
         if descending:
-            params['descending'] = descending
-        if params == {'format': format}:
-            return self.check_result(get(url=f'{self.api_server}/md/stats/{exchange}/{portfolio}/history/trades', headers=self.get_headers()))
-        return self.check_result(get(url=f'{self.api_server}/md/stats/{exchange}/{portfolio}/history/trades', params=params, headers=self.get_headers()))
+            params["descending"] = descending
+        if params == {"format": format}:
+            return self.check_result(
+                get(url=f"{self.api_server}/md/stats/{exchange}/{portfolio}/history/trades", headers=self.get_headers())
+            )
+        return self.check_result(
+            get(
+                url=f"{self.api_server}/md/stats/{exchange}/{portfolio}/history/trades",
+                params=params,
+                headers=self.get_headers(),
+            )
+        )
 
-    def get_trades_symbol(self, portfolio, exchange, symbol, date_from=None, id_from=None, limit=None, descending=None, format='Simple'):
+    def get_trades_symbol(
+        self, portfolio, exchange, symbol, date_from=None, id_from=None, limit=None, descending=None, format="Simple"
+    ):
         """Получение истории сделок (один тикер)
 
         :param str portfolio: Идентификатор клиентского портфеля
@@ -189,22 +249,35 @@ class AlorPy:
         :param bool descending: Флаг загрузки элементов с конца списка
         :param str format: Формат принимаемых данных 'Simple', 'Slim', 'Heavy'
         """
-        params = {'format': format}
+        params = {"format": format}
         if date_from:
-            params['dateFrom'] = date_from
+            params["dateFrom"] = date_from
         if id_from:
-            params['from'] = id_from
+            params["from"] = id_from
         if limit:
-            params['limit'] = limit
+            params["limit"] = limit
         if descending:
-            params['descending'] = descending
-        if params == {'format': format}:
-            return self.check_result(get(url=f'{self.api_server}/md/stats/{exchange}/{portfolio}/history/trades/{symbol}', headers=self.get_headers()))
-        return self.check_result(get(url=f'{self.api_server}/md/stats/{exchange}/{portfolio}/history/trades/{symbol}', params=params, headers=self.get_headers()))
+            params["descending"] = descending
+        if params == {"format": format}:
+            return self.check_result(
+                get(
+                    url=f"{self.api_server}/md/stats/{exchange}/{portfolio}/history/trades/{symbol}",
+                    headers=self.get_headers(),
+                )
+            )
+        return self.check_result(
+            get(
+                url=f"{self.api_server}/md/stats/{exchange}/{portfolio}/history/trades/{symbol}",
+                params=params,
+                headers=self.get_headers(),
+            )
+        )
 
     # Instruments - Ценные бумаги / инструменты
 
-    def get_securities(self, symbol, limit=None, offset=None, sector=None, cficode=None, exchange=None, format='Simple'):
+    def get_securities(
+        self, symbol, limit=None, offset=None, sector=None, cficode=None, exchange=None, format="Simple"
+    ):
         """Получение информации о торговых инструментах
 
         :param str symbol: Маска тикера. Например SB выведет SBER, SBERP, SBRB ETF и пр.
@@ -215,49 +288,60 @@ class AlorPy:
         :param str exchange: Биржа 'MOEX' или 'SPBX'
         :param str format: Формат принимаемых данных 'Simple', 'Slim', 'Heavy'
         """
-        params = {'query': symbol, 'format': format}
+        params = {"query": symbol, "format": format}
         if limit:
-            params['limit'] = limit
+            params["limit"] = limit
         if offset:
-            params['offset'] = offset
+            params["offset"] = offset
         if sector:
-            params['sector'] = sector
+            params["sector"] = sector
         if cficode:
-            params['cficode'] = cficode
+            params["cficode"] = cficode
         if exchange:
-            params['exchange'] = exchange
-        return self.check_result(get(url=f'{self.api_server}/md/v2/Securities', params=params, headers=self.get_headers()))
+            params["exchange"] = exchange
+        return self.check_result(
+            get(url=f"{self.api_server}/md/v2/Securities", params=params, headers=self.get_headers())
+        )
 
-    def get_securities_exchange(self, exchange, format='Simple'):
+    def get_securities_exchange(self, exchange, format="Simple"):
         """Получение информации о торговых инструментах на выбранной бирже
 
         :param str exchange: Биржа 'MOEX' или 'SPBX'
         :param str format: Формат принимаемых данных 'Simple', 'Slim', 'Heavy'
         """
-        params = {'format': format}
-        return self.check_result(get(url=f'{self.api_server}/md/v2/Securities/{exchange}', params=params, headers=self.get_headers()))
+        params = {"format": format}
+        return self.check_result(
+            get(url=f"{self.api_server}/md/v2/Securities/{exchange}", params=params, headers=self.get_headers())
+        )
 
-    def get_symbol(self, exchange, symbol, format='Simple'):
+    def get_symbol(self, exchange, symbol, format="Simple"):
         """Получение информации о выбранном финансовом инструменте
 
         :param str exchange: Биржа 'MOEX' или 'SPBX'
         :param str symbol: Тикер
         :param str format: Формат принимаемых данных 'Simple', 'Slim', 'Heavy'
         """
-        params = {'format': format}
-        return self.check_result(get(url=f'{self.api_server}/md/v2/Securities/{exchange}/{symbol}', params=params, headers=self.get_headers()))
+        params = {"format": format}
+        return self.check_result(
+            get(
+                url=f"{self.api_server}/md/v2/Securities/{exchange}/{symbol}", params=params, headers=self.get_headers()
+            )
+        )
 
-    def get_quotes(self, symbols, format='Simple'):
+    def get_quotes(self, symbols, format="Simple"):
         """Получение информации о котировках для выбранных инструментов
 
-        :param str symbols: Принимает несколько пар биржа-тикер. Пары отделены запятыми. Биржа и тикер разделены двоеточием.
+        :param str symbols: Принимает несколько пар биржа-тикер. Пары отделены запятыми. Биржа и тикер разделены
+        двоеточием.
         Пример: MOEX:SBER,MOEX:GAZP,SPBX:AAPL
         :param str format: Формат принимаемых данных 'Simple', 'Slim', 'Heavy'
         """
-        params = {'format': format}
-        return self.check_result(get(url=f'{self.api_server}/md/v2/Securities/{symbols}/quotes', params=params, headers=self.get_headers()))
+        params = {"format": format}
+        return self.check_result(
+            get(url=f"{self.api_server}/md/v2/Securities/{symbols}/quotes", params=params, headers=self.get_headers())
+        )
 
-    def get_order_book(self, exchange, symbol, depth=20, format='Simple'):
+    def get_order_book(self, exchange, symbol, depth=20, format="Simple"):
         """Получение информации о биржевом стакане
 
         :param exchange: Биржа 'MOEX' или 'SPBX'
@@ -265,10 +349,25 @@ class AlorPy:
         :param depth: Глубина стакана. Стандартное и максимальное значение - 20 (20х20)
         :param str format: Формат принимаемых данных 'Simple', 'Slim', 'Heavy'
         """
-        params = {'depth': depth, 'format': format}
-        return self.check_result(get(url=f'{self.api_server}/md/v2/orderbooks/{exchange}/{symbol}', params=params, headers=self.get_headers()))
+        params = {"depth": depth, "format": format}
+        return self.check_result(
+            get(
+                url=f"{self.api_server}/md/v2/orderbooks/{exchange}/{symbol}", params=params, headers=self.get_headers()
+            )
+        )
 
-    def get_all_trades(self, exchange, symbol, seconds_from=None, seconds_to=None, id_from=None, id_to=None, take=None, descending=None, format='Simple'):
+    def get_all_trades(
+        self,
+        exchange,
+        symbol,
+        seconds_from=None,
+        seconds_to=None,
+        id_from=None,
+        id_to=None,
+        take=None,
+        descending=None,
+        format="Simple",
+    ):
         """Получение информации о всех сделках по ценным бумагам за сегодня
 
         :param str exchange: Биржа 'MOEX' или 'SPBX'
@@ -281,24 +380,34 @@ class AlorPy:
         :param bool descending: Флаг загрузки элементов с конца списка
         :param str format: Формат принимаемых данных 'Simple', 'Slim', 'Heavy'
         """
-        params = {'format': format}
+        params = {"format": format}
         if seconds_from:
-            params['from'] = seconds_from
+            params["from"] = seconds_from
         if seconds_to:
-            params['to'] = seconds_to
+            params["to"] = seconds_to
         if id_from:
-            params['fromId'] = id_from
+            params["fromId"] = id_from
         if id_to:
-            params['toId'] = id_to
+            params["toId"] = id_to
         if take:
-            params['take'] = take
+            params["take"] = take
         if descending:
-            params['descending'] = descending
-        if params == {'format': format}:
-            return self.check_result(get(url=f'{self.api_server}/md/v2/Securities/{exchange}/{symbol}/alltrades', headers=self.get_headers()))
-        return self.check_result(get(url=f'{self.api_server}/md/v2/Securities/{exchange}/{symbol}/alltrades', params=params, headers=self.get_headers()))
+            params["descending"] = descending
+        if params == {"format": format}:
+            return self.check_result(
+                get(url=f"{self.api_server}/md/v2/Securities/{exchange}/{symbol}/alltrades", headers=self.get_headers())
+            )
+        return self.check_result(
+            get(
+                url=f"{self.api_server}/md/v2/Securities/{exchange}/{symbol}/alltrades",
+                params=params,
+                headers=self.get_headers(),
+            )
+        )
 
-    def get_all_trades_history(self, exchange, symbol, seconds_from=None, seconds_to=None, limit=50000, offset=None, format='Simple'):
+    def get_all_trades_history(
+        self, exchange, symbol, seconds_from=None, seconds_to=None, limit=50000, offset=None, format="Simple"
+    ):
         """Получение исторической информации о всех сделках по ценным бумагам
 
         :param str exchange: Биржа 'MOEX' или 'SPBX'
@@ -309,57 +418,85 @@ class AlorPy:
         :param int offset: Смещение начала выборки (для постраничного вывода)
         :param str format: Формат принимаемых данных 'Simple', 'Slim', 'Heavy'
         """
-        params = {'limit': limit, 'format': format}
+        params = {"limit": limit, "format": format}
         if seconds_from:
-            params['from'] = seconds_from
+            params["from"] = seconds_from
         if seconds_to:
-            params['to'] = seconds_to
+            params["to"] = seconds_to
         if offset:
-            params['offset'] = offset
-        return self.check_result(get(url=f'{self.api_server}/md/v2/Securities/{exchange}/{symbol}/alltrades/history', params=params, headers=self.get_headers()))
+            params["offset"] = offset
+        return self.check_result(
+            get(
+                url=f"{self.api_server}/md/v2/Securities/{exchange}/{symbol}/alltrades/history",
+                params=params,
+                headers=self.get_headers(),
+            )
+        )
 
-    def get_actual_futures_quote(self, exchange, symbol, format='Simple'):
+    def get_actual_futures_quote(self, exchange, symbol, format="Simple"):
         """Получение котировки по ближайшему фьючерсу (код)
 
         :param str exchange: Биржа 'MOEX' или 'SPBX'
         :param str symbol: Тикер
         :param str format: Формат принимаемых данных 'Simple', 'Slim', 'Heavy'
         """
-        params = {'format': format}
-        return self.check_result(get(url=f'{self.api_server}/md/v2/Securities/{exchange}/{symbol}/actualFuturesQuote', params=params, headers=self.get_headers()))
+        params = {"format": format}
+        return self.check_result(
+            get(
+                url=f"{self.api_server}/md/v2/Securities/{exchange}/{symbol}/actualFuturesQuote",
+                params=params,
+                headers=self.get_headers(),
+            )
+        )
 
     def get_risk_rates(self, exchange, ticker=None, risk_category_id=None, search=None):
         """Запрос ставок риска
 
         :param str exchange: Биржа 'MOEX' или 'SPBX'
         :param str ticker: Тикер, код инструмента, ISIN для облигаций
-        :param int risk_category_id: Id вашей (или той которая интересует) категории риска. Можно получить из запроса информации по клиенту или через кабинет клиента
+        :param int risk_category_id: Id вашей (или той которая интересует) категории риска. Можно получить из запроса
+        информации по клиенту или через кабинет клиента
         :param str search: Часть Тикера, кода инструмента, ISIN для облигаций. Вернет все совпадения, начинающиеся с
         """
-        params = {'exchange': exchange}
+        params = {"exchange": exchange}
         if ticker:
-            params['ticker'] = ticker
+            params["ticker"] = ticker
         if risk_category_id:
-            params['riskCategoryId'] = risk_category_id
+            params["riskCategoryId"] = risk_category_id
         if search:
-            params['search'] = search
-        return self.check_result(get(url=f'{self.api_server}/md/v2/risk/rates', params=params, headers=self.get_headers()))
+            params["search"] = search
+        return self.check_result(
+            get(url=f"{self.api_server}/md/v2/risk/rates", params=params, headers=self.get_headers())
+        )
 
-    def get_history(self, exchange, symbol, tf, seconds_from=1, seconds_to=32536799999, untraded=False, format='Simple'):
+    def get_history(
+        self, exchange, symbol, tf, seconds_from=1, seconds_to=32536799999, untraded=False, format="Simple"
+    ):
         """Запрос истории рынка для выбранных биржи и финансового инструмента
 
         :param str exchange: Биржа 'MOEX' или 'SPBX'
         :param str symbol: Тикер
-        :param int|str tf: Длительность временнОго интервала в секундах или код ("D" - дни, "W" - недели, "M" - месяцы, "Y" - годы)
+        :param int|str tf: Длительность временнОго интервала в секундах или код ("D" - дни, "W" - недели, "M" - месяцы,
+        "Y" - годы)
         :param int seconds_from: Дата и время UTC в секундах для первого запрашиваемого бара
         :param int seconds_to: Дата и время UTC в секундах для последнего запрашиваемого бара
-        :param bool untraded: Флаг для поиска данных по устаревшим или экспирированным инструментам. При использовании требуется точное совпадение тикера
+        :param bool untraded: Флаг для поиска данных по устаревшим или экспирированным инструментам. При использовании
+        требуется точное совпадение тикера
         :param str format: Формат принимаемых данных 'Simple', 'Slim', 'Heavy'
         """
-        # Если на from подаем точное время начала бара, то этот бар из Алор не передается. Возможно, проблема в том, что сервис Алора смотрит все даты >, а >= from
+        # Если на from подаем точное время начала бара, то этот бар из Алор не передается. Возможно, проблема в том, что
+        # сервис Алора смотрит все даты >, а >= from
         # Временное решение, вычитать 1 секунду
-        params = {'exchange': exchange, 'symbol': symbol, 'tf': tf, 'from': seconds_from - 1, 'to': seconds_to, 'untraded': untraded, 'format': format}
-        return self.check_result(get(url=f'{self.api_server}/md/v2/history', params=params, headers=self.get_headers()))
+        params = {
+            "exchange": exchange,
+            "symbol": symbol,
+            "tf": tf,
+            "from": seconds_from - 1,
+            "to": seconds_to,
+            "untraded": untraded,
+            "format": format,
+        }
+        return self.check_result(get(url=f"{self.api_server}/md/v2/history", params=params, headers=self.get_headers()))
 
     # Other - Другое
 
@@ -367,21 +504,27 @@ class AlorPy:
         """Запрос текущего UTC времени в секундах на сервере
         Если этот запрос выполнен без авторизации, то будет возвращено время, которое было 15 минут назад
         """
-        return self.check_result(get(url=f'{self.api_server}/md/v2/time', headers=self.get_headers()))
+        return self.check_result(get(url=f"{self.api_server}/md/v2/time", headers=self.get_headers()))
 
     # Orders Работа с заявками
 
-    def get_orders(self, portfolio, exchange, format='Simple'):
+    def get_orders(self, portfolio, exchange, format="Simple"):
         """Получение информации о всех заявках
 
         :param str portfolio: Идентификатор клиентского портфеля
         :param str exchange: Биржа 'MOEX' или 'SPBX'
         :param str format: Формат принимаемых данных 'Simple', 'Slim', 'Heavy'
         """
-        params = {'format': format}
-        return self.check_result(get(url=f'{self.api_server}/md/v2/clients/{exchange}/{portfolio}/orders', params=params, headers=self.get_headers()))
+        params = {"format": format}
+        return self.check_result(
+            get(
+                url=f"{self.api_server}/md/v2/clients/{exchange}/{portfolio}/orders",
+                params=params,
+                headers=self.get_headers(),
+            )
+        )
 
-    def get_order(self, portfolio, exchange, order_id, format='Simple'):
+    def get_order(self, portfolio, exchange, order_id, format="Simple"):
         """Получение информации о выбранной заявке
 
         :param str portfolio: Идентификатор клиентского портфеля
@@ -389,8 +532,14 @@ class AlorPy:
         :param int order_id: Номер заявки на бирже
         :param str format: Формат принимаемых данных 'Simple', 'Slim', 'Heavy'
         """
-        params = {'format': format}
-        return self.check_result(get(url=f'{self.api_server}/md/v2/clients/{exchange}/{portfolio}/orders/{order_id}', params=params, headers=self.get_headers()))
+        params = {"format": format}
+        return self.check_result(
+            get(
+                url=f"{self.api_server}/md/v2/clients/{exchange}/{portfolio}/orders/{order_id}",
+                params=params,
+                headers=self.get_headers(),
+            )
+        )
 
     def create_market_order(self, portfolio, exchange, symbol, side, quantity):
         """Создание рыночной заявки
@@ -402,11 +551,36 @@ class AlorPy:
         :param int quantity: Кол-во в лотах
         """
         headers = self.get_headers()
-        headers['X-ALOR-REQID'] = f'{portfolio};{self.get_request_id()}'  # Портфель с уникальным идентификатором запроса
-        j = {'side': side, 'type': 'market', 'quantity': abs(quantity), 'instrument': {'symbol': symbol, 'exchange': exchange}, 'user': {'portfolio': portfolio}}
-        return self.check_result(post(url=f'{self.api_server}/commandapi/warptrans/TRADE/v2/client/orders/actions/market', headers=headers, json=j))
+        headers[
+            "X-ALOR-REQID"
+        ] = f"{portfolio};{self.get_request_id()}"  # Портфель с уникальным идентификатором запроса
+        j = {
+            "side": side,
+            "type": "market",
+            "quantity": abs(quantity),
+            "instrument": {"symbol": symbol, "exchange": exchange},
+            "user": {"portfolio": portfolio},
+        }
+        return self.check_result(
+            post(
+                url=f"{self.api_server}/commandapi/warptrans/TRADE/v2/client/orders/actions/market",
+                headers=headers,
+                json=j,
+            )
+        )
 
-    def create_limit_order(self, portfolio, exchange, symbol, side, quantity, limit_price, time_in_force='GoodTillCancelled', iceberg_fixed=None, iceberg_variance=None):
+    def create_limit_order(
+        self,
+        portfolio,
+        exchange,
+        symbol,
+        side,
+        quantity,
+        limit_price,
+        time_in_force="GoodTillCancelled",
+        iceberg_fixed=None,
+        iceberg_variance=None,
+    ):
         """Создание лимитной заявки
 
         :param str portfolio: Идентификатор клиентского портфеля
@@ -415,18 +589,36 @@ class AlorPy:
         :param str side: Покупка 'buy' или продажа 'sell'
         :param int quantity: Кол-во в лотах
         :param float limit_price: Лимитная цена
-        :param str time_in_force: 'OneDay' - До конца дня, 'ImmediateOrCancel' - Снять остаток, 'FillOrKill' - Исполнить целиком или отклонить, 'GoodTillCancelled' - Активна до отмены
+        :param str time_in_force: 'OneDay' - До конца дня, 'ImmediateOrCancel' - Снять остаток, 'FillOrKill' - Исполнить
+        целиком или отклонить, 'GoodTillCancelled' - Активна до отмены
         :param int iceberg_fixed: Видимая постоянная часть айсберг-заявки в лотах
-        :param int iceberg_variance: Амплитуда отклонения (в % от icebergFixed) случайной надбавки к видимой части айсберг-заявки. Только срочный рынок
+        :param int iceberg_variance: Амплитуда отклонения (в % от icebergFixed) случайной надбавки к видимой части
+        айсберг-заявки. Только срочный рынок
         """
         headers = self.get_headers()
-        headers['X-ALOR-REQID'] = f'{portfolio};{self.get_request_id()}'  # Портфель с уникальным идентификатором запроса
-        j = {'side': side, 'type': 'limit', 'quantity': abs(quantity), 'price': limit_price, 'instrument': {'symbol': symbol, 'exchange': exchange}, 'user': {'portfolio': portfolio}, 'timeInForce': time_in_force}
+        headers[
+            "X-ALOR-REQID"
+        ] = f"{portfolio};{self.get_request_id()}"  # Портфель с уникальным идентификатором запроса
+        j = {
+            "side": side,
+            "type": "limit",
+            "quantity": abs(quantity),
+            "price": limit_price,
+            "instrument": {"symbol": symbol, "exchange": exchange},
+            "user": {"portfolio": portfolio},
+            "timeInForce": time_in_force,
+        }
         if iceberg_fixed:
-            j['icebergFixed'] = iceberg_fixed
+            j["icebergFixed"] = iceberg_fixed
         if iceberg_variance:
-            j['icebergVariance'] = iceberg_variance
-        return self.check_result(post(url=f'{self.api_server}/commandapi/warptrans/TRADE/v2/client/orders/actions/limit', headers=headers, json=j))
+            j["icebergVariance"] = iceberg_variance
+        return self.check_result(
+            post(
+                url=f"{self.api_server}/commandapi/warptrans/TRADE/v2/client/orders/actions/limit",
+                headers=headers,
+                json=j,
+            )
+        )
 
     def edit_market_order(self, account, portfolio, exchange, order_id, symbol, side, quantity):
         """Изменение рыночной заявки
@@ -440,11 +632,38 @@ class AlorPy:
         :param int quantity: Кол-во в лотах
         """
         headers = self.get_headers()
-        headers['X-ALOR-REQID'] = f'{portfolio};{order_id};{quantity}'  # Портфель с уникальным идентификатором запроса и кол-вом в лотах
-        j = {'side': side, 'type': 'market', 'id': order_id, 'quantity': abs(quantity), 'instrument': {'symbol': symbol, 'exchange': exchange}, 'user': {'account': account, 'portfolio': portfolio}}
-        return self.check_result(put(url=f'{self.api_server}/commandapi/warptrans/TRADE/v2/client/orders/actions/market/{order_id}', headers=headers, json=j))
+        headers[
+            "X-ALOR-REQID"
+        ] = f"{portfolio};{order_id};{quantity}"  # Портфель с уникальным идентификатором запроса и кол-вом в лотах
+        j = {
+            "side": side,
+            "type": "market",
+            "id": order_id,
+            "quantity": abs(quantity),
+            "instrument": {"symbol": symbol, "exchange": exchange},
+            "user": {"account": account, "portfolio": portfolio},
+        }
+        return self.check_result(
+            put(
+                url=f"{self.api_server}/commandapi/warptrans/TRADE/v2/client/orders/actions/market/{order_id}",
+                headers=headers,
+                json=j,
+            )
+        )
 
-    def edit_limit_order(self, portfolio, exchange, order_id, symbol, side, quantity, limit_price, time_in_force='GoodTillCancelled', iceberg_fixed=None, iceberg_variance=None):
+    def edit_limit_order(
+        self,
+        portfolio,
+        exchange,
+        order_id,
+        symbol,
+        side,
+        quantity,
+        limit_price,
+        time_in_force="GoodTillCancelled",
+        iceberg_fixed=None,
+        iceberg_variance=None,
+    ):
         """Изменение лимитной заявки
 
         :param str portfolio: Идентификатор клиентского портфеля
@@ -454,18 +673,36 @@ class AlorPy:
         :param str side: Покупка 'buy' или продажа 'sell'
         :param int quantity: Кол-во в лотах
         :param float limit_price: Лимитная цена
-        :param str time_in_force: 'OneDay' - До конца дня, 'ImmediateOrCancel' - Снять остаток, 'FillOrKill' - Исполнить целиком или отклонить, 'GoodTillCancelled' - Активна до отмены
+        :param str time_in_force: 'OneDay' - До конца дня, 'ImmediateOrCancel' - Снять остаток, 'FillOrKill' - Исполнить
+        целиком или отклонить, 'GoodTillCancelled' - Активна до отмены
         :param int iceberg_fixed: Видимая постоянная часть айсберг-заявки в лотах
-        :param int iceberg_variance: Амплитуда отклонения (в % от icebergFixed) случайной надбавки к видимой части айсберг-заявки. Только срочный рынок
+        :param int iceberg_variance: Амплитуда отклонения (в % от icebergFixed) случайной надбавки к видимой части
+        айсберг-заявки. Только срочный рынок
         """
         headers = self.get_headers()
-        headers['X-ALOR-REQID'] = f'{portfolio};{order_id};{quantity}'  # Портфель с уникальным идентификатором запроса и кол-вом в лотах
-        j = {'side': side, 'type': 'limit', 'quantity': abs(quantity), 'price': limit_price, 'instrument': {'symbol': symbol, 'exchange': exchange}, 'user': {'portfolio': portfolio}, 'timeInForce': time_in_force}
+        headers[
+            "X-ALOR-REQID"
+        ] = f"{portfolio};{order_id};{quantity}"  # Портфель с уникальным идентификатором запроса и кол-вом в лотах
+        j = {
+            "side": side,
+            "type": "limit",
+            "quantity": abs(quantity),
+            "price": limit_price,
+            "instrument": {"symbol": symbol, "exchange": exchange},
+            "user": {"portfolio": portfolio},
+            "timeInForce": time_in_force,
+        }
         if iceberg_fixed:
-            j['icebergFixed'] = iceberg_fixed
+            j["icebergFixed"] = iceberg_fixed
         if iceberg_variance:
-            j['icebergVariance'] = iceberg_variance
-        return self.check_result(put(url=f'{self.api_server}/commandapi/warptrans/TRADE/v2/client/orders/actions/limit/{order_id}', headers=headers, json=j))
+            j["icebergVariance"] = iceberg_variance
+        return self.check_result(
+            put(
+                url=f"{self.api_server}/commandapi/warptrans/TRADE/v2/client/orders/actions/limit/{order_id}",
+                headers=headers,
+                json=j,
+            )
+        )
 
     def estimate_order(self, portfolio, exchange, symbol, price, quantity, board, include_limit_orders=False):
         """Провести оценку одной заявки
@@ -478,18 +715,37 @@ class AlorPy:
         :param str board: Режим торгов (борд). TQBR - акции, TQOB - облигации, RFUD - фьючерсы, ...
         :param bool include_limit_orders: Учитывать ли лимитные заявки при расчете
         """
-        j = {'portfolio': portfolio, 'ticker': symbol, 'exchange': exchange, 'price': price, 'lotQuantity': quantity, 'board': board, 'includeLimitOrders': include_limit_orders}
-        return self.check_result(post(url=f'{self.api_server}/commandapi/warptrans/TRADE/v2/client/orders/estimate', json=j))
+        j = {
+            "portfolio": portfolio,
+            "ticker": symbol,
+            "exchange": exchange,
+            "price": price,
+            "lotQuantity": quantity,
+            "board": board,
+            "includeLimitOrders": include_limit_orders,
+        }
+        return self.check_result(
+            post(url=f"{self.api_server}/commandapi/warptrans/TRADE/v2/client/orders/estimate", json=j)
+        )
 
     def estimate_orders(self, orders):
         """Провести оценку нескольких заявок
 
         :param dict orders: Список заявок. Оформлять каждую заявку как в EstimateOrder:
-        {'portfolio': portfolio, 'ticker': symbol, 'exchange': exchange, 'price': price, 'lotQuantity': quantity, 'board': board}
+        {
+            'portfolio': portfolio,
+            'ticker': symbol,
+            'exchange': exchange,
+            'price': price,
+            'lotQuantity': quantity,
+            'board': board
+        }
         """
-        return self.check_result(post(url=f'{self.api_server}/commandapi/warptrans/TRADE/v2/client/orders/estimate/all', json=orders))
+        return self.check_result(
+            post(url=f"{self.api_server}/commandapi/warptrans/TRADE/v2/client/orders/estimate/all", json=orders)
+        )
 
-    def delete_order(self, portfolio, exchange, order_id, stop=False, format='Simple'):
+    def delete_order(self, portfolio, exchange, order_id, stop=False, format="Simple"):
         """Снятие заявки
 
         :param str portfolio: Идентификатор клиентского портфеля
@@ -499,13 +755,19 @@ class AlorPy:
         :param str format: Формат принимаемых данных 'Simple', 'Slim', 'Heavy'
         """
         headers = self.get_headers()
-        headers['X-ALOR-REQID'] = self.get_request_id()  # Уникальный идентификатор запроса
-        params = {'portfolio': portfolio, 'exchange': exchange, 'stop': stop, 'jsonResponse': True, 'format': format}
-        return self.check_result(delete(url=f'{self.api_server}/commandapi/warptrans/TRADE/v2/client/orders/{order_id}', params=params, headers=headers))
+        headers["X-ALOR-REQID"] = self.get_request_id()  # Уникальный идентификатор запроса
+        params = {"portfolio": portfolio, "exchange": exchange, "stop": stop, "jsonResponse": True, "format": format}
+        return self.check_result(
+            delete(
+                url=f"{self.api_server}/commandapi/warptrans/TRADE/v2/client/orders/{order_id}",
+                params=params,
+                headers=headers,
+            )
+        )
 
     # Subscriptions - Подписки и события (WebSocket)
 
-    def order_book_get_and_subscribe(self, exchange, symbol, depth=20, frequency=0, format='Simple') -> str:
+    def order_book_get_and_subscribe(self, exchange, symbol, depth=20, frequency=0, format="Simple") -> str:
         """Подписка на информацию о биржевом стакане для выбранных биржи и финансового инструмента
 
         :param str exchange: Биржа 'MOEX' или 'SPBX'
@@ -515,24 +777,41 @@ class AlorPy:
         :param str format: Формат принимаемых данных 'Simple', 'Slim', 'Heavy'
         :return: Уникальный идентификатор подписки
         """
-        request = {'opcode': 'OrderBookGetAndSubscribe', 'exchange': exchange, 'code': symbol, 'depth': depth, 'frequency': frequency, 'format': format}  # Запрос на подписку
+        request = {
+            "opcode": "OrderBookGetAndSubscribe",
+            "exchange": exchange,
+            "code": symbol,
+            "depth": depth,
+            "frequency": frequency,
+            "format": format,
+        }  # Запрос на подписку
         return self.subscribe(request)  # Отправляем запрос, возвращаем уникальный идентификатор подписки
 
-    def bars_get_and_subscribe(self, exchange, symbol, tf, seconds_from, frequency=0, format='Simple') -> str:
+    def bars_get_and_subscribe(self, exchange, symbol, tf, seconds_from, frequency=0, format="Simple") -> str:
         """Подписка на историю цен (свечи) для выбранных биржи и финансового инструмента
 
         :param str exchange: Биржа 'MOEX' или 'SPBX'
         :param str symbol: Тикер
-        :param tf: Длительность временнОго интервала в секундах или код ("D" - дни, "W" - недели, "M" - месяцы, "Y" - годы)
+        :param tf: Длительность временнОго интервала в секундах или код ("D" - дни, "W" - недели, "M" - месяцы,
+        "Y" - годы)
         :param int seconds_from: Дата и время UTC в секундах для первого запрашиваемого бара
         :param int frequency: Максимальная частота отдачи данных сервером в миллисекундах
         :param str format: Формат принимаемых данных 'Simple', 'Slim', 'Heavy'
         :return: Уникальный идентификатор подписки
         """
-        request = {'opcode': 'BarsGetAndSubscribe', 'exchange': exchange, 'code': symbol, 'tf': tf, 'from': int(seconds_from), 'delayed': False, 'frequency': frequency, 'format': format}  # Запрос на подписку
+        request = {
+            "opcode": "BarsGetAndSubscribe",
+            "exchange": exchange,
+            "code": symbol,
+            "tf": tf,
+            "from": int(seconds_from),
+            "delayed": False,
+            "frequency": frequency,
+            "format": format,
+        }  # Запрос на подписку
         return self.subscribe(request)  # Отправляем запрос, возвращаем уникальный идентификатор подписки
 
-    def quotes_subscribe(self, exchange, symbol, frequency=0, format='Simple') -> str:
+    def quotes_subscribe(self, exchange, symbol, frequency=0, format="Simple") -> str:
         """Подписка на информацию о котировках для выбранных инструментов и бирж
 
         :param str exchange: Биржа 'MOEX' или 'SPBX'
@@ -541,10 +820,18 @@ class AlorPy:
         :param str format: Формат принимаемых данных 'Simple', 'Slim', 'Heavy'
         :return: Уникальный идентификатор подписки
         """
-        request = {'opcode': 'QuotesSubscribe', 'exchange': exchange, 'code': symbol, 'frequency': frequency, 'format': format}  # Запрос на подписку
+        request = {
+            "opcode": "QuotesSubscribe",
+            "exchange": exchange,
+            "code": symbol,
+            "frequency": frequency,
+            "format": format,
+        }  # Запрос на подписку
         return self.subscribe(request)  # Отправляем запрос, возвращаем уникальный идентификатор подписки
 
-    def all_trades_subscribe(self, exchange, symbol, depth=0, include_virtual_trades=False, frequency=0, format='Simple') -> str:
+    def all_trades_subscribe(
+        self, exchange, symbol, depth=0, include_virtual_trades=False, frequency=0, format="Simple"
+    ) -> str:
         """Подписка на информацию о всех сделках
 
         :param str exchange: Биржа 'MOEX' или 'SPBX'
@@ -555,10 +842,18 @@ class AlorPy:
         :param str format: Формат принимаемых данных 'Simple', 'Slim', 'Heavy'
         :return: Уникальный идентификатор подписки
         """
-        request = {'opcode': 'AllTradesGetAndSubscribe', 'code': symbol, 'exchange': exchange, 'depth': depth, 'includeVirtualTrades': include_virtual_trades, 'frequency': frequency, 'format': format}  # Запрос на подписку
+        request = {
+            "opcode": "AllTradesGetAndSubscribe",
+            "code": symbol,
+            "exchange": exchange,
+            "depth": depth,
+            "includeVirtualTrades": include_virtual_trades,
+            "frequency": frequency,
+            "format": format,
+        }  # Запрос на подписку
         return self.subscribe(request)  # Отправляем запрос, возвращаем уникальный идентификатор подписки
 
-    def positions_get_and_subscribe_v2(self, portfolio, exchange, frequency=0, format='Simple') -> str:
+    def positions_get_and_subscribe_v2(self, portfolio, exchange, frequency=0, format="Simple") -> str:
         """Подписка на информацию о текущих позициях по ценным бумагам и деньгам
 
         :param str portfolio: Идентификатор клиентского портфеля
@@ -567,10 +862,16 @@ class AlorPy:
         :param str format: Формат принимаемых данных 'Simple', 'Slim', 'Heavy'
         :return: Уникальный идентификатор подписки
         """
-        request = {'opcode': 'PositionsGetAndSubscribeV2', 'exchange': exchange, 'portfolio': portfolio, 'frequency': frequency, 'format': format}  # Запрос на подписку
+        request = {
+            "opcode": "PositionsGetAndSubscribeV2",
+            "exchange": exchange,
+            "portfolio": portfolio,
+            "frequency": frequency,
+            "format": format,
+        }  # Запрос на подписку
         return self.subscribe(request)  # Отправляем запрос, возвращаем уникальный идентификатор подписки
 
-    def summaries_get_and_subscribe_v2(self, portfolio, exchange, frequency=0, format='Simple') -> str:
+    def summaries_get_and_subscribe_v2(self, portfolio, exchange, frequency=0, format="Simple") -> str:
         """Подписка на сводную информацию по портфелю
 
         :param str portfolio: Идентификатор клиентского портфеля
@@ -579,10 +880,16 @@ class AlorPy:
         :param str format: Формат принимаемых данных 'Simple', 'Slim', 'Heavy'
         :return: Уникальный идентификатор подписки
         """
-        request = {'opcode': 'SummariesGetAndSubscribeV2', 'exchange': exchange, 'portfolio': portfolio, 'frequency': frequency, 'format': format}  # Запрос на подписку
+        request = {
+            "opcode": "SummariesGetAndSubscribeV2",
+            "exchange": exchange,
+            "portfolio": portfolio,
+            "frequency": frequency,
+            "format": format,
+        }  # Запрос на подписку
         return self.subscribe(request)  # Отправляем запрос, возвращаем уникальный идентификатор подписки
 
-    def risks_get_and_subscribe(self, portfolio, exchange, frequency=0, format='Simple') -> str:
+    def risks_get_and_subscribe(self, portfolio, exchange, frequency=0, format="Simple") -> str:
         """Подписка на сводную информацию по портфельным рискам
 
         :param str portfolio: Идентификатор клиентского портфеля
@@ -591,10 +898,16 @@ class AlorPy:
         :param str format: Формат принимаемых данных 'Simple', 'Slim', 'Heavy'
         :return: Уникальный идентификатор подписки
         """
-        request = {'opcode': 'RisksGetAndSubscribe', 'exchange': exchange, 'portfolio': portfolio, 'frequency': frequency, 'format': format}  # Запрос на подписку
+        request = {
+            "opcode": "RisksGetAndSubscribe",
+            "exchange": exchange,
+            "portfolio": portfolio,
+            "frequency": frequency,
+            "format": format,
+        }  # Запрос на подписку
         return self.subscribe(request)  # Отправляем запрос, возвращаем уникальный идентификатор подписки
 
-    def spectra_risks_get_and_subscribe(self, portfolio, exchange, frequency=0, format='Simple') -> str:
+    def spectra_risks_get_and_subscribe(self, portfolio, exchange, frequency=0, format="Simple") -> str:
         """Подписка на информацию по рискам срочного рынка (FORTS)
 
         :param str portfolio: Идентификатор клиентского портфеля
@@ -603,10 +916,16 @@ class AlorPy:
         :param str format: Формат принимаемых данных 'Simple', 'Slim', 'Heavy'
         :return: Уникальный идентификатор подписки
         """
-        request = {'opcode': 'SpectraRisksGetAndSubscribe', 'exchange': exchange, 'portfolio': portfolio, 'frequency': frequency, 'format': format}  # Запрос на подписку
+        request = {
+            "opcode": "SpectraRisksGetAndSubscribe",
+            "exchange": exchange,
+            "portfolio": portfolio,
+            "frequency": frequency,
+            "format": format,
+        }  # Запрос на подписку
         return self.subscribe(request)  # Отправляем запрос, возвращаем уникальный идентификатор подписки
 
-    def trades_get_and_subscribe_v2(self, portfolio, exchange, frequency=0, format='Simple') -> str:
+    def trades_get_and_subscribe_v2(self, portfolio, exchange, frequency=0, format="Simple") -> str:
         """Подписка на информацию о сделках
 
         :param str portfolio: Идентификатор клиентского портфеля
@@ -615,15 +934,24 @@ class AlorPy:
         :param str format: Формат принимаемых данных 'Simple', 'Slim', 'Heavy'
         :return: Уникальный идентификатор подписки
         """
-        request = {'opcode': 'TradesGetAndSubscribeV2', 'exchange': exchange, 'portfolio': portfolio, 'frequency': frequency, 'format': format}  # Запрос на подписку
+        request = {
+            "opcode": "TradesGetAndSubscribeV2",
+            "exchange": exchange,
+            "portfolio": portfolio,
+            "frequency": frequency,
+            "format": format,
+        }  # Запрос на подписку
         return self.subscribe(request)  # Отправляем запрос, возвращаем уникальный идентификатор подписки
 
-    def orders_get_and_subscribe_v2(self, portfolio, exchange, order_statuses=None, frequency=0, format='Simple') -> str:
+    def orders_get_and_subscribe_v2(
+        self, portfolio, exchange, order_statuses=None, frequency=0, format="Simple"
+    ) -> str:
         """Подписка на информацию о текущих заявках на рынке для выбранных биржи и финансового инструмента
 
         :param str portfolio: Идентификатор клиентского портфеля
         :param str exchange: Биржа 'MOEX' или 'SPBX'
-        :param list[str] order_statuses: Опциональный фильтр по статусам заявок. Влияет только на фильтрацию первичных исторических данных при подписке
+        :param list[str] order_statuses: Опциональный фильтр по статусам заявок. Влияет только на фильтрацию первичных
+        исторических данных при подписке
         Статус исполнения. Пример: order_statuses=['filled', 'canceled']
             'working' - На исполнении
             'filled' - Исполнена
@@ -633,12 +961,20 @@ class AlorPy:
         :param str format: Формат принимаемых данных 'Simple', 'Slim', 'Heavy'
         :return: Уникальный идентификатор подписки
         """
-        request = {'opcode': 'OrdersGetAndSubscribeV2', 'exchange': exchange, 'portfolio': portfolio, 'frequency': frequency, 'format': format}  # Запрос на подписку
+        request = {
+            "opcode": "OrdersGetAndSubscribeV2",
+            "exchange": exchange,
+            "portfolio": portfolio,
+            "frequency": frequency,
+            "format": format,
+        }  # Запрос на подписку
         if order_statuses:
-            request['orderStatuses'] = order_statuses
-        return self.subscribe(request)  # Отправляем запрос, возвращаем уникальный идентификатор подписки
+            request["orderStatuses"] = order_statuses
 
-    def instruments_get_and_subscribe_v2(self, exchange, symbol, frequency=0, format='Simple') -> str:
+        # Отправляем запрос, возвращаем уникальный идентификатор подписки
+        return self.subscribe(request)
+
+    def instruments_get_and_subscribe_v2(self, exchange, symbol, frequency=0, format="Simple") -> str:
         """Подписка на изменение информации о финансовых инструментах на выбранной бирже
 
         :param str exchange: Биржа 'MOEX' или 'SPBX'
@@ -647,7 +983,13 @@ class AlorPy:
         :param str format: Формат принимаемых данных 'Simple', 'Slim', 'Heavy'
         :return: Уникальный идентификатор подписки
         """
-        request = {'opcode': 'InstrumentsGetAndSubscribeV2', 'code': symbol, 'exchange': exchange, 'frequency': frequency, 'format': format}  # Запрос на подписку
+        request = {
+            "opcode": "InstrumentsGetAndSubscribeV2",
+            "code": symbol,
+            "exchange": exchange,
+            "frequency": frequency,
+            "format": format,
+        }  # Запрос на подписку
         return self.subscribe(request)  # Отправляем запрос, возвращаем уникальный идентификатор подписки
 
     def unsubscribe(self, guid) -> str:
@@ -656,12 +998,18 @@ class AlorPy:
         :param str guid: Уникальный идентификатор подписки
         :return: Уникальный идентификатор подписки
         """
-        request = {'opcode': 'unsubscribe', 'token': str(self.get_jwt_token()), 'guid': guid}  # Запрос на отмену подписки
-        get_event_loop().run_until_complete(self.ws_socket.send(dumps(request)))  # Отправляем запрос. Дожидаемся его выполнения
+        request = {
+            "opcode": "unsubscribe",
+            "token": str(self.get_jwt_token()),
+            "guid": guid,
+        }  # Запрос на отмену подписки
+        get_event_loop().run_until_complete(
+            self.ws_socket.send(dumps(request))
+        )  # Отправляем запрос. Дожидаемся его выполнения
         del self.subscriptions[guid]  # Удаляем подписку из справочника
         return self.subscribe(request)  # Отправляем запрос, возвращаем уникальный идентификатор подписки
 
-    def stop_orders_get_and_subscribe_v2(self, portfolio, exchange, frequency=0, format='Simple') -> str:
+    def stop_orders_get_and_subscribe_v2(self, portfolio, exchange, frequency=0, format="Simple") -> str:
         """Подписка на информацию о текущих стоп заявках на рынке для выбранных биржи и финансового инструмента
 
         :param str portfolio: Идентификатор клиентского портфеля
@@ -670,22 +1018,34 @@ class AlorPy:
         :param str format: Формат принимаемых данных 'Simple', 'Slim', 'Heavy'
         :return: Уникальный идентификатор подписки
         """
-        request = {'opcode': 'StopOrdersGetAndSubscribeV2', 'exchange': exchange, 'portfolio': portfolio, 'frequency': frequency, 'format': format}  # Запрос на подписку
+        request = {
+            "opcode": "StopOrdersGetAndSubscribeV2",
+            "exchange": exchange,
+            "portfolio": portfolio,
+            "frequency": frequency,
+            "format": format,
+        }  # Запрос на подписку
         return self.subscribe(request)  # Отправляем запрос, возвращаем уникальный идентификатор подписки
 
     # StopOrdersV2 - Стоп-заявки v2
 
-    def get_stop_orders(self, portfolio, exchange, format='Simple'):
+    def get_stop_orders(self, portfolio, exchange, format="Simple"):
         """Получение информации о стоп-заявках
 
         :param str portfolio: Идентификатор клиентского портфеля
         :param str exchange: Биржа 'MOEX' или 'SPBX'
         :param str format: Формат принимаемых данных 'Simple', 'Slim', 'Heavy'
         """
-        params = {'format': format}
-        return self.check_result(get(url=f'{self.api_server}/md/v2/clients/{exchange}/{portfolio}/stoporders', params=params, headers=self.get_headers()))
+        params = {"format": format}
+        return self.check_result(
+            get(
+                url=f"{self.api_server}/md/v2/clients/{exchange}/{portfolio}/stoporders",
+                params=params,
+                headers=self.get_headers(),
+            )
+        )
 
-    def get_stop_order(self, portfolio, exchange, order_id, format='Simple'):
+    def get_stop_order(self, portfolio, exchange, order_id, format="Simple"):
         """Получение информации о выбранной стоп-заявке
 
         :param str portfolio: Идентификатор клиентского портфеля
@@ -693,10 +1053,28 @@ class AlorPy:
         :param int order_id: Номер заявки на бирже
         :param str format: Формат принимаемых данных 'Simple', 'Slim', 'Heavy'
         """
-        params = {'format': format}
-        return self.check_result(get(url=f'{self.api_server}/md/v2/clients/{exchange}/{portfolio}/stoporders/{order_id}', params=params, headers=self.get_headers()))
+        params = {"format": format}
+        return self.check_result(
+            get(
+                url=f"{self.api_server}/md/v2/clients/{exchange}/{portfolio}/stoporders/{order_id}",
+                params=params,
+                headers=self.get_headers(),
+            )
+        )
 
-    def create_stop_order(self, portfolio, exchange, symbol, class_code, side, quantity, stop_price, condition='Less', seconds_order_end=0, activate=True):
+    def create_stop_order(
+        self,
+        portfolio,
+        exchange,
+        symbol,
+        class_code,
+        side,
+        quantity,
+        stop_price,
+        condition="Less",
+        seconds_order_end=0,
+        activate=True,
+    ):
         """Создание стоп-заявки
         :param str portfolio: Идентификатор клиентского портфеля
         :param str exchange: Биржа 'MOEX' или 'SPBX'
@@ -710,15 +1088,44 @@ class AlorPy:
         :param bool activate: Флаг активной заявки
         """
         headers = self.get_headers()
-        headers['X-ALOR-REQID'] = f'{portfolio};{self.get_request_id()}'  # Портфель с уникальным идентификатором запроса
-        j = {'side': side, 'condition': condition, 'triggerPrice': stop_price, 'stopEndUnixTime': seconds_order_end, 'quantity': abs(quantity),
-             'instrument': {'symbol': symbol, 'exchange': exchange, 'instrumentGroup': class_code},
-             'user': {'portfolio': portfolio, 'exchange': exchange}, 'activate': activate}
+        headers[
+            "X-ALOR-REQID"
+        ] = f"{portfolio};{self.get_request_id()}"  # Портфель с уникальным идентификатором запроса
+        j = {
+            "side": side,
+            "condition": condition,
+            "triggerPrice": stop_price,
+            "stopEndUnixTime": seconds_order_end,
+            "quantity": abs(quantity),
+            "instrument": {"symbol": symbol, "exchange": exchange, "instrumentGroup": class_code},
+            "user": {"portfolio": portfolio, "exchange": exchange},
+            "activate": activate,
+        }
         return self.check_result(
-            post(url=f'{self.api_server}/commandapi/warptrans/TRADE/v2/client/orders/actions/stop', headers=headers, json=j))
+            post(
+                url=f"{self.api_server}/commandapi/warptrans/TRADE/v2/client/orders/actions/stop",
+                headers=headers,
+                json=j,
+            )
+        )
 
-    def create_stop_limit_order(self, portfolio, exchange, symbol, class_code, side, quantity, stop_price, limit_price, condition='Less', seconds_order_end=0,
-                                time_in_force='GoodTillCancelled', iceberg_fixed=None, iceberg_variance=None, activate=True):
+    def create_stop_limit_order(
+        self,
+        portfolio,
+        exchange,
+        symbol,
+        class_code,
+        side,
+        quantity,
+        stop_price,
+        limit_price,
+        condition="Less",
+        seconds_order_end=0,
+        time_in_force="GoodTillCancelled",
+        iceberg_fixed=None,
+        iceberg_variance=None,
+        activate=True,
+    ):
         """Создание стоп-лимитной заявки
         :param str portfolio: Идентификатор клиентского портфеля
         :param str exchange: Биржа 'MOEX' или 'SPBX'
@@ -730,23 +1137,55 @@ class AlorPy:
         :param float limit_price: Лимитная цена
         :param str condition: Условие 'More' или 'Less'
         :param int seconds_order_end: Дата и время UTC в секундах завершения сделки
-        :param str time_in_force: 'OneDay' - До конца дня, 'ImmediateOrCancel' - Снять остаток, 'FillOrKill' - Исполнить целиком или отклонить, 'GoodTillCancelled' - Активна до отмены
+        :param str time_in_force: 'OneDay' - До конца дня, 'ImmediateOrCancel' - Снять остаток, 'FillOrKill' - Исполнить
+        целиком или отклонить, 'GoodTillCancelled' - Активна до отмены
         :param int iceberg_fixed: Видимая постоянная часть айсберг-заявки в лотах
-        :param int iceberg_variance: Амплитуда отклонения (в % от icebergFixed) случайной надбавки к видимой части айсберг-заявки. Только срочный рынок
+        :param int iceberg_variance: Амплитуда отклонения (в % от icebergFixed) случайной надбавки к видимой части
+        айсберг-заявки. Только срочный рынок
         :param bool activate: Флаг активной заявки
         """
         headers = self.get_headers()
-        headers['X-ALOR-REQID'] = f'{portfolio};{self.get_request_id()}'  # Портфель с уникальным идентификатором запроса
-        j = {'side': side, 'condition': condition, 'triggerPrice': stop_price, 'stopEndUnixTime': seconds_order_end, 'price': limit_price, 'quantity': abs(quantity),
-             'instrument': {'symbol': symbol, 'exchange': exchange, 'instrumentGroup': class_code}, 'user': {'portfolio': portfolio, 'exchange': exchange},
-             'timeInForce': time_in_force, 'activate': activate}
+        headers[
+            "X-ALOR-REQID"
+        ] = f"{portfolio};{self.get_request_id()}"  # Портфель с уникальным идентификатором запроса
+        j = {
+            "side": side,
+            "condition": condition,
+            "triggerPrice": stop_price,
+            "stopEndUnixTime": seconds_order_end,
+            "price": limit_price,
+            "quantity": abs(quantity),
+            "instrument": {"symbol": symbol, "exchange": exchange, "instrumentGroup": class_code},
+            "user": {"portfolio": portfolio, "exchange": exchange},
+            "timeInForce": time_in_force,
+            "activate": activate,
+        }
         if iceberg_fixed:
-            j['icebergFixed'] = iceberg_fixed
+            j["icebergFixed"] = iceberg_fixed
         if iceberg_variance:
-            j['icebergVariance'] = iceberg_variance
-        return self.check_result(post(url=f'{self.api_server}/commandapi/warptrans/TRADE/v2/client/orders/actions/stopLimit', headers=headers, json=j))
+            j["icebergVariance"] = iceberg_variance
+        return self.check_result(
+            post(
+                url=f"{self.api_server}/commandapi/warptrans/TRADE/v2/client/orders/actions/stopLimit",
+                headers=headers,
+                json=j,
+            )
+        )
 
-    def edit_stop_order_v2(self, portfolio, exchange, order_id, symbol, class_code, side, quantity, stop_price, condition='Less', seconds_order_end=0, activate=True):
+    def edit_stop_order_v2(
+        self,
+        portfolio,
+        exchange,
+        order_id,
+        symbol,
+        class_code,
+        side,
+        quantity,
+        stop_price,
+        condition="Less",
+        seconds_order_end=0,
+        activate=True,
+    ):
         """Изменение стоп-заявки
         :param str portfolio: Идентификатор клиентского портфеля
         :param str exchange: Биржа 'MOEX' или 'SPBX'
@@ -761,13 +1200,45 @@ class AlorPy:
         :param bool activate: Флаг активной заявки
         """
         headers = self.get_headers()
-        headers['X-ALOR-REQID'] = f'{portfolio};{self.get_request_id()}'  # Портфель с уникальным идентификатором запроса
-        j = {'side': side, 'condition': condition, 'triggerPrice': stop_price, 'stopEndUnixTime': seconds_order_end, 'quantity': abs(quantity),
-             'instrument': {'symbol': symbol, 'exchange': exchange, 'instrumentGroup': class_code}, 'user': {'portfolio': portfolio, 'exchange': exchange}, 'activate': activate}
-        return self.check_result(put(url=f'{self.api_server}/commandapi/warptrans/TRADE/v2/client/orders/actions/stop/{order_id}', headers=headers, json=j))
+        headers[
+            "X-ALOR-REQID"
+        ] = f"{portfolio};{self.get_request_id()}"  # Портфель с уникальным идентификатором запроса
+        j = {
+            "side": side,
+            "condition": condition,
+            "triggerPrice": stop_price,
+            "stopEndUnixTime": seconds_order_end,
+            "quantity": abs(quantity),
+            "instrument": {"symbol": symbol, "exchange": exchange, "instrumentGroup": class_code},
+            "user": {"portfolio": portfolio, "exchange": exchange},
+            "activate": activate,
+        }
+        return self.check_result(
+            put(
+                url=f"{self.api_server}/commandapi/warptrans/TRADE/v2/client/orders/actions/stop/{order_id}",
+                headers=headers,
+                json=j,
+            )
+        )
 
-    def edit_stop_limit_order_v2(self, portfolio, exchange, order_id, symbol, class_code, side, quantity, stop_price, limit_price, condition='Less', seconds_order_end=0,
-                                 time_in_force='GoodTillCancelled', iceberg_fixed=None, iceberg_variance=None, activate=True):
+    def edit_stop_limit_order_v2(
+        self,
+        portfolio,
+        exchange,
+        order_id,
+        symbol,
+        class_code,
+        side,
+        quantity,
+        stop_price,
+        limit_price,
+        condition="Less",
+        seconds_order_end=0,
+        time_in_force="GoodTillCancelled",
+        iceberg_fixed=None,
+        iceberg_variance=None,
+        activate=True,
+    ):
         """Изменение стоп-лимитной заявки
         :param str portfolio: Идентификатор клиентского портфеля
         :param str exchange: Биржа 'MOEX' или 'SPBX'
@@ -780,27 +1251,46 @@ class AlorPy:
         :param float limit_price: Лимитная цена
         :param str condition: Условие 'More' или 'Less'
         :param int seconds_order_end: Дата и время UTC в секундах завершения сделки
-        :param str time_in_force: 'OneDay' - До конца дня, 'ImmediateOrCancel' - Снять остаток, 'FillOrKill' - Исполнить целиком или отклонить, 'GoodTillCancelled' - Активна до отмены
+        :param str time_in_force: 'OneDay' - До конца дня, 'ImmediateOrCancel' - Снять остаток, 'FillOrKill' - Исполнить
+        целиком или отклонить, 'GoodTillCancelled' - Активна до отмены
         :param int iceberg_fixed: Видимая постоянная часть айсберг-заявки в лотах
-        :param int iceberg_variance: Амплитуда отклонения (в % от icebergFixed) случайной надбавки к видимой части айсберг-заявки. Только срочный рынок
+        :param int iceberg_variance: Амплитуда отклонения (в % от icebergFixed) случайной надбавки к видимой части
+        айсберг-заявки. Только срочный рынок
         :param bool activate: Флаг активной заявки
         """
         headers = self.get_headers()
-        headers['X-ALOR-REQID'] = f'{portfolio};{self.get_request_id()}'  # Портфель с уникальным идентификатором запроса
-        j = {'side': side, 'condition': condition, 'triggerPrice': stop_price, 'stopEndUnixTime': seconds_order_end, 'price': limit_price, 'quantity': abs(quantity),
-             'instrument': {'symbol': symbol, 'exchange': exchange, 'instrumentGroup': class_code}, 'user': {'portfolio': portfolio, 'exchange': exchange},
-             'timeInForce': time_in_force, 'activate': activate}
+        headers[
+            "X-ALOR-REQID"
+        ] = f"{portfolio};{self.get_request_id()}"  # Портфель с уникальным идентификатором запроса
+        j = {
+            "side": side,
+            "condition": condition,
+            "triggerPrice": stop_price,
+            "stopEndUnixTime": seconds_order_end,
+            "price": limit_price,
+            "quantity": abs(quantity),
+            "instrument": {"symbol": symbol, "exchange": exchange, "instrumentGroup": class_code},
+            "user": {"portfolio": portfolio, "exchange": exchange},
+            "timeInForce": time_in_force,
+            "activate": activate,
+        }
         if iceberg_fixed:
-            j['icebergFixed'] = iceberg_fixed
+            j["icebergFixed"] = iceberg_fixed
         if iceberg_variance:
-            j['icebergVariance'] = iceberg_variance
-        return self.check_result(put(url=f'{self.api_server}/commandapi/warptrans/TRADE/v2/client/orders/actions/stopLimit/{order_id}', headers=headers, json=j))
+            j["icebergVariance"] = iceberg_variance
+        return self.check_result(
+            put(
+                url=f"{self.api_server}/commandapi/warptrans/TRADE/v2/client/orders/actions/stopLimit/{order_id}",
+                headers=headers,
+                json=j,
+            )
+        )
 
     # OrdersWebSocket - Работа с заявками (WebSocket)
 
     def authorize_websocket(self):
         """Авторизация"""
-        return self.send_websocket({'opcode': 'authorize', 'token': self.get_jwt_token()})
+        return self.send_websocket({"opcode": "authorize", "token": self.get_jwt_token()})
 
     def create_market_order_websocket(self, portfolio, exchange, board, symbol, side, quantity, check_duplicates=True):
         """Создание рыночной заявки
@@ -813,11 +1303,31 @@ class AlorPy:
         :param int quantity: Кол-во в лотах
         :param bool check_duplicates: Флаг, отвечающий за проверку уникальности команд
         """
-        request = {'opcode': 'create:market', 'side': side, 'quantity': abs(quantity), 'instrument': {'exchange': exchange, 'symbol': symbol},
-                   'board': board, 'user': {'portfolio': portfolio}, 'checkDuplicates': check_duplicates}
+        request = {
+            "opcode": "create:market",
+            "side": side,
+            "quantity": abs(quantity),
+            "instrument": {"exchange": exchange, "symbol": symbol},
+            "board": board,
+            "user": {"portfolio": portfolio},
+            "checkDuplicates": check_duplicates,
+        }
         return self.send_websocket(request)
 
-    def create_limit_order_websocket(self, portfolio, exchange, board, symbol, side, quantity, limit_price, time_in_force='GoodTillCancelled', iceberg_fixed=None, iceberg_variance=None, check_duplicates=True):
+    def create_limit_order_websocket(
+        self,
+        portfolio,
+        exchange,
+        board,
+        symbol,
+        side,
+        quantity,
+        limit_price,
+        time_in_force="GoodTillCancelled",
+        iceberg_fixed=None,
+        iceberg_variance=None,
+        check_duplicates=True,
+    ):
         """Создание лимитной заявки
 
         :param str portfolio: Идентификатор клиентского портфеля
@@ -827,20 +1337,44 @@ class AlorPy:
         :param str side: Покупка 'buy' или продажа 'sell'
         :param int quantity: Кол-во в лотах
         :param float limit_price: Лимитная цена
-        :param str time_in_force: 'OneDay' - До конца дня, 'ImmediateOrCancel' - Снять остаток, 'FillOrKill' - Исполнить целиком или отклонить, 'GoodTillCancelled' - Активна до отмены
+        :param str time_in_force: 'OneDay' - До конца дня, 'ImmediateOrCancel' - Снять остаток, 'FillOrKill' - Исполнить
+        целиком или отклонить, 'GoodTillCancelled' - Активна до отмены
         :param int iceberg_fixed: Видимая постоянная часть айсберг-заявки в лотах
-        :param int iceberg_variance: Амплитуда отклонения (в % от icebergFixed) случайной надбавки к видимой части айсберг-заявки. Только срочный рынок
+        :param int iceberg_variance: Амплитуда отклонения (в % от icebergFixed) случайной надбавки к видимой части
+        айсберг-заявки. Только срочный рынок
         :param bool check_duplicates: Флаг, отвечающий за проверку уникальности команд
         """
-        request = {'opcode': 'create:limit', 'side': side, 'quantity': abs(quantity), 'price': limit_price, 'instrument': {'exchange': exchange, 'symbol': symbol},
-                   'board': board, 'user': {'portfolio': portfolio}, 'timeInForce': time_in_force, 'checkDuplicates': check_duplicates}
+        request = {
+            "opcode": "create:limit",
+            "side": side,
+            "quantity": abs(quantity),
+            "price": limit_price,
+            "instrument": {"exchange": exchange, "symbol": symbol},
+            "board": board,
+            "user": {"portfolio": portfolio},
+            "timeInForce": time_in_force,
+            "checkDuplicates": check_duplicates,
+        }
         if iceberg_fixed:
-            request['icebergFixed'] = iceberg_fixed
+            request["icebergFixed"] = iceberg_fixed
         if iceberg_variance:
-            request['icebergVariance'] = iceberg_variance
+            request["icebergVariance"] = iceberg_variance
         return self.send_websocket(request)
 
-    def create_stop_order_websocket(self, portfolio, exchange, symbol, board, side, quantity, stop_price, condition='Less', seconds_order_end=0, check_duplicates=True, activate=True):
+    def create_stop_order_websocket(
+        self,
+        portfolio,
+        exchange,
+        symbol,
+        board,
+        side,
+        quantity,
+        stop_price,
+        condition="Less",
+        seconds_order_end=0,
+        check_duplicates=True,
+        activate=True,
+    ):
         """Создание стоп-заявки
 
         :param str portfolio: Идентификатор клиентского портфеля
@@ -855,13 +1389,39 @@ class AlorPy:
         :param bool check_duplicates: Флаг, отвечающий за проверку уникальности команд
         :param bool activate: Флаг активной заявки
         """
-        request = {'opcode': 'create:stop', 'side': side, 'quantity': abs(quantity), 'condition': condition, 'triggerPrice': stop_price, 'stopEndUnixTime': seconds_order_end,
-                   'instrument': {'symbol': symbol, 'exchange': exchange}, 'board': board, 'user': {'portfolio': portfolio, 'exchange': exchange},
-                   'checkDuplicates': check_duplicates, 'activate': activate}
+        request = {
+            "opcode": "create:stop",
+            "side": side,
+            "quantity": abs(quantity),
+            "condition": condition,
+            "triggerPrice": stop_price,
+            "stopEndUnixTime": seconds_order_end,
+            "instrument": {"symbol": symbol, "exchange": exchange},
+            "board": board,
+            "user": {"portfolio": portfolio, "exchange": exchange},
+            "checkDuplicates": check_duplicates,
+            "activate": activate,
+        }
         return self.send_websocket(request)
 
-    def create_stop_limit_order_websocket(self, portfolio, exchange, symbol, board, side, quantity, stop_price, limit_price, condition='Less', seconds_order_end=0,
-                                          time_in_force='GoodTillCancelled', iceberg_fixed=None, iceberg_variance=None, check_duplicates=True, activate=True):
+    def create_stop_limit_order_websocket(
+        self,
+        portfolio,
+        exchange,
+        symbol,
+        board,
+        side,
+        quantity,
+        stop_price,
+        limit_price,
+        condition="Less",
+        seconds_order_end=0,
+        time_in_force="GoodTillCancelled",
+        iceberg_fixed=None,
+        iceberg_variance=None,
+        check_duplicates=True,
+        activate=True,
+    ):
         """Создание стоп-лимитной заявки
 
         :param str portfolio: Идентификатор клиентского портфеля
@@ -874,22 +1434,38 @@ class AlorPy:
         :param float limit_price: Лимитная цена
         :param str condition: Условие 'More' или 'Less'
         :param int seconds_order_end: Дата и время UTC в секундах завершения сделки
-        :param str time_in_force: 'OneDay' - До конца дня, 'ImmediateOrCancel' - Снять остаток, 'FillOrKill' - Исполнить целиком или отклонить, 'GoodTillCancelled' - Активна до отмены
+        :param str time_in_force: 'OneDay' - До конца дня, 'ImmediateOrCancel' - Снять остаток, 'FillOrKill' - Исполнить
+        целиком или отклонить, 'GoodTillCancelled' - Активна до отмены
         :param int iceberg_fixed: Видимая постоянная часть айсберг-заявки в лотах
-        :param int iceberg_variance: Амплитуда отклонения (в % от icebergFixed) случайной надбавки к видимой части айсберг-заявки. Только срочный рынок
+        :param int iceberg_variance: Амплитуда отклонения (в % от icebergFixed) случайной надбавки к видимой части
+        айсберг-заявки. Только срочный рынок
         :param bool check_duplicates: Флаг, отвечающий за проверку уникальности команд
         :param bool activate: Флаг активной заявки
         """
-        request = {'opcode': 'create:stopLimit', 'side': side, 'quantity': abs(quantity), 'price': limit_price, 'condition': condition, 'triggerPrice': stop_price, 'stopEndUnixTime': seconds_order_end,
-                   'instrument': {'symbol': symbol, 'exchange': exchange}, 'board': board, 'user': {'portfolio': portfolio, 'exchange': exchange},
-                   'timeInForce': time_in_force, 'checkDuplicates': check_duplicates, 'activate': activate}
+        request = {
+            "opcode": "create:stopLimit",
+            "side": side,
+            "quantity": abs(quantity),
+            "price": limit_price,
+            "condition": condition,
+            "triggerPrice": stop_price,
+            "stopEndUnixTime": seconds_order_end,
+            "instrument": {"symbol": symbol, "exchange": exchange},
+            "board": board,
+            "user": {"portfolio": portfolio, "exchange": exchange},
+            "timeInForce": time_in_force,
+            "checkDuplicates": check_duplicates,
+            "activate": activate,
+        }
         if iceberg_fixed:
-            request['icebergFixed'] = iceberg_fixed
+            request["icebergFixed"] = iceberg_fixed
         if iceberg_variance:
-            request['icebergVariance'] = iceberg_variance
+            request["icebergVariance"] = iceberg_variance
         return self.send_websocket(request)
 
-    def edit_market_order_websocket(self, order_id, portfolio, exchange, board, symbol, side, quantity, check_duplicates=True):
+    def edit_market_order_websocket(
+        self, order_id, portfolio, exchange, board, symbol, side, quantity, check_duplicates=True
+    ):
         """Изменение рыночной заявки
 
         :param int order_id: Номер заявки
@@ -901,11 +1477,33 @@ class AlorPy:
         :param int quantity: Кол-во в лотах
         :param bool check_duplicates: Флаг, отвечающий за проверку уникальности команд
         """
-        request = {'opcode': 'update:market', 'orderId': order_id, 'side': side, 'quantity': abs(quantity),
-                   'instrument': {'exchange': exchange, 'symbol': symbol}, 'board': board, 'user': {'portfolio': portfolio}, 'checkDuplicates': check_duplicates}
+        request = {
+            "opcode": "update:market",
+            "orderId": order_id,
+            "side": side,
+            "quantity": abs(quantity),
+            "instrument": {"exchange": exchange, "symbol": symbol},
+            "board": board,
+            "user": {"portfolio": portfolio},
+            "checkDuplicates": check_duplicates,
+        }
         return self.send_websocket(request)
 
-    def edit_limit_order_websocket(self, order_id, portfolio, exchange, board, symbol, side, quantity, limit_price, time_in_force='GoodTillCancelled', iceberg_fixed=None, iceberg_variance=None, check_duplicates=True):
+    def edit_limit_order_websocket(
+        self,
+        order_id,
+        portfolio,
+        exchange,
+        board,
+        symbol,
+        side,
+        quantity,
+        limit_price,
+        time_in_force="GoodTillCancelled",
+        iceberg_fixed=None,
+        iceberg_variance=None,
+        check_duplicates=True,
+    ):
         """Изменение лимитной заявки
 
         :param int order_id: Номер заявки
@@ -916,20 +1514,46 @@ class AlorPy:
         :param str side: Покупка 'buy' или продажа 'sell'
         :param int quantity: Кол-во в лотах
         :param float limit_price: Лимитная цена
-        :param str time_in_force: 'OneDay' - До конца дня, 'ImmediateOrCancel' - Снять остаток, 'FillOrKill' - Исполнить целиком или отклонить, 'GoodTillCancelled' - Активна до отмены
+        :param str time_in_force: 'OneDay' - До конца дня, 'ImmediateOrCancel' - Снять остаток, 'FillOrKill' - Исполнить
+        целиком или отклонить, 'GoodTillCancelled' - Активна до отмены
         :param int iceberg_fixed: Видимая постоянная часть айсберг-заявки в лотах
-        :param int iceberg_variance: Амплитуда отклонения (в % от icebergFixed) случайной надбавки к видимой части айсберг-заявки. Только срочный рынок
+        :param int iceberg_variance: Амплитуда отклонения (в % от icebergFixed) случайной надбавки к видимой части
+        айсберг-заявки. Только срочный рынок
         :param bool check_duplicates: Флаг, отвечающий за проверку уникальности команд
         """
-        request = {'opcode': 'update:limit', 'orderId': order_id, 'side': side, 'quantity': abs(quantity), 'price': limit_price, 'instrument': {'exchange': exchange, 'symbol': symbol},
-                   'board': board, 'user': {'portfolio': portfolio}, 'timeInForce': time_in_force, 'checkDuplicates': check_duplicates}
+        request = {
+            "opcode": "update:limit",
+            "orderId": order_id,
+            "side": side,
+            "quantity": abs(quantity),
+            "price": limit_price,
+            "instrument": {"exchange": exchange, "symbol": symbol},
+            "board": board,
+            "user": {"portfolio": portfolio},
+            "timeInForce": time_in_force,
+            "checkDuplicates": check_duplicates,
+        }
         if iceberg_fixed:
-            request['icebergFixed'] = iceberg_fixed
+            request["icebergFixed"] = iceberg_fixed
         if iceberg_variance:
-            request['icebergVariance'] = iceberg_variance
+            request["icebergVariance"] = iceberg_variance
         return self.send_websocket(request)
 
-    def edit_stop_order_websocket(self, order_id, portfolio, exchange, symbol, board, side, quantity, stop_price, condition='Less', seconds_order_end=0, check_duplicates=True, activate=True):
+    def edit_stop_order_websocket(
+        self,
+        order_id,
+        portfolio,
+        exchange,
+        symbol,
+        board,
+        side,
+        quantity,
+        stop_price,
+        condition="Less",
+        seconds_order_end=0,
+        check_duplicates=True,
+        activate=True,
+    ):
         """Изменение стоп-заявки
 
         :param int order_id: Номер заявки
@@ -945,13 +1569,41 @@ class AlorPy:
         :param bool check_duplicates: Флаг, отвечающий за проверку уникальности команд
         :param bool activate: Флаг активной заявки
         """
-        request = {'opcode': 'update:stop', 'orderId': order_id, 'side': side, 'quantity': abs(quantity), 'condition': condition, 'triggerPrice': stop_price, 'stopEndUnixTime': seconds_order_end,
-                   'instrument': {'symbol': symbol, 'exchange': exchange}, 'board': board, 'user': {'portfolio': portfolio, 'exchange': exchange},
-                   'checkDuplicates': check_duplicates, 'activate': activate}
+        request = {
+            "opcode": "update:stop",
+            "orderId": order_id,
+            "side": side,
+            "quantity": abs(quantity),
+            "condition": condition,
+            "triggerPrice": stop_price,
+            "stopEndUnixTime": seconds_order_end,
+            "instrument": {"symbol": symbol, "exchange": exchange},
+            "board": board,
+            "user": {"portfolio": portfolio, "exchange": exchange},
+            "checkDuplicates": check_duplicates,
+            "activate": activate,
+        }
         return self.send_websocket(request)
 
-    def edit_stop_limit_order_websocket(self, order_id, portfolio, exchange, symbol, board, side, quantity, stop_price, limit_price, condition='Less', seconds_order_end=0,
-                                        time_in_force='GoodTillCancelled', iceberg_fixed=None, iceberg_variance=None, check_duplicates=True, activate=True):
+    def edit_stop_limit_order_websocket(
+        self,
+        order_id,
+        portfolio,
+        exchange,
+        symbol,
+        board,
+        side,
+        quantity,
+        stop_price,
+        limit_price,
+        condition="Less",
+        seconds_order_end=0,
+        time_in_force="GoodTillCancelled",
+        iceberg_fixed=None,
+        iceberg_variance=None,
+        check_duplicates=True,
+        activate=True,
+    ):
         """Изменение стоп-лимитной заявки
 
         :param int order_id: Номер заявки
@@ -965,19 +1617,34 @@ class AlorPy:
         :param float limit_price: Лимитная цена
         :param str condition: Условие 'More' или 'Less'
         :param int seconds_order_end: Дата и время UTC в секундах завершения сделки
-        :param str time_in_force: 'OneDay' - До конца дня, 'ImmediateOrCancel' - Снять остаток, 'FillOrKill' - Исполнить целиком или отклонить, 'GoodTillCancelled' - Активна до отмены
+        :param str time_in_force: 'OneDay' - До конца дня, 'ImmediateOrCancel' - Снять остаток, 'FillOrKill' - Исполнить
+        целиком или отклонить, 'GoodTillCancelled' - Активна до отмены
         :param int iceberg_fixed: Видимая постоянная часть айсберг-заявки в лотах
-        :param int iceberg_variance: Амплитуда отклонения (в % от icebergFixed) случайной надбавки к видимой части айсберг-заявки. Только срочный рынок
+        :param int iceberg_variance: Амплитуда отклонения (в % от icebergFixed) случайной надбавки к видимой части
+        айсберг-заявки. Только срочный рынок
         :param bool check_duplicates: Флаг, отвечающий за проверку уникальности команд
         :param bool activate: Флаг активной заявки
         """
-        request = {'opcode': 'update:stopLimit', 'orderId': order_id, 'side': side, 'quantity': abs(quantity), 'price': limit_price, 'condition': condition, 'triggerPrice': stop_price, 'stopEndUnixTime': seconds_order_end,
-                   'instrument': {'symbol': symbol, 'exchange': exchange}, 'board': board, 'user': {'portfolio': portfolio, 'exchange': exchange},
-                   'timeInForce': time_in_force, 'checkDuplicates': check_duplicates, 'activate': activate}
+        request = {
+            "opcode": "update:stopLimit",
+            "orderId": order_id,
+            "side": side,
+            "quantity": abs(quantity),
+            "price": limit_price,
+            "condition": condition,
+            "triggerPrice": stop_price,
+            "stopEndUnixTime": seconds_order_end,
+            "instrument": {"symbol": symbol, "exchange": exchange},
+            "board": board,
+            "user": {"portfolio": portfolio, "exchange": exchange},
+            "timeInForce": time_in_force,
+            "checkDuplicates": check_duplicates,
+            "activate": activate,
+        }
         if iceberg_fixed:
-            request['icebergFixed'] = iceberg_fixed
+            request["icebergFixed"] = iceberg_fixed
         if iceberg_variance:
-            request['icebergVariance'] = iceberg_variance
+            request["icebergVariance"] = iceberg_variance
         return self.send_websocket(request)
 
     def delete_market_order_websocket(self, order_id, portfolio, exchange, check_duplicates=True):
@@ -988,7 +1655,13 @@ class AlorPy:
         :param str exchange: Биржа 'MOEX' или 'SPBX'
         :param bool check_duplicates: Флаг, отвечающий за проверку уникальности команд
         """
-        request = {'opcode': 'delete:market', 'orderId': order_id, 'exchange': exchange, 'user': {'portfolio': portfolio}, 'checkDuplicates': check_duplicates}
+        request = {
+            "opcode": "delete:market",
+            "orderId": order_id,
+            "exchange": exchange,
+            "user": {"portfolio": portfolio},
+            "checkDuplicates": check_duplicates,
+        }
         return self.send_websocket(request)
 
     def delete_limit_order_websocket(self, order_id, portfolio, exchange, check_duplicates=True):
@@ -999,7 +1672,13 @@ class AlorPy:
         :param str exchange: Биржа 'MOEX' или 'SPBX'
         :param bool check_duplicates: Флаг, отвечающий за проверку уникальности команд
         """
-        request = {'opcode': 'delete:limit', 'orderId': order_id, 'exchange': exchange, 'user': {'portfolio': portfolio}, 'checkDuplicates': check_duplicates}
+        request = {
+            "opcode": "delete:limit",
+            "orderId": order_id,
+            "exchange": exchange,
+            "user": {"portfolio": portfolio},
+            "checkDuplicates": check_duplicates,
+        }
         return self.send_websocket(request)
 
     def delete_stop_order_websocket(self, order_id, portfolio, exchange, check_duplicates=True):
@@ -1010,7 +1689,13 @@ class AlorPy:
         :param str exchange: Биржа 'MOEX' или 'SPBX'
         :param bool check_duplicates: Флаг, отвечающий за проверку уникальности команд
         """
-        request = {'opcode': 'delete:stop', 'orderId': order_id, 'exchange': exchange, 'user': {'portfolio': portfolio}, 'checkDuplicates': check_duplicates}
+        request = {
+            "opcode": "delete:stop",
+            "orderId": order_id,
+            "exchange": exchange,
+            "user": {"portfolio": portfolio},
+            "checkDuplicates": check_duplicates,
+        }
         return self.send_websocket(request)
 
     def delete_stop_limit_order_websocket(self, order_id, portfolio, exchange, check_duplicates=True):
@@ -1021,21 +1706,29 @@ class AlorPy:
         :param str exchange: Биржа 'MOEX' или 'SPBX'
         :param bool check_duplicates: Флаг, отвечающий за проверку уникальности команд
         """
-        request = {'opcode': 'delete:stopLimit', 'orderId': order_id, 'exchange': exchange, 'user': {'portfolio': portfolio}, 'checkDuplicates': check_duplicates}
+        request = {
+            "opcode": "delete:stopLimit",
+            "orderId": order_id,
+            "exchange": exchange,
+            "user": {"portfolio": portfolio},
+            "checkDuplicates": check_duplicates,
+        }
         return self.send_websocket(request)
 
     # OrderGroups - Группы заявок
 
     def get_order_groups(self):
         """Получение всех групп заявок"""
-        return self.check_result(get(url=f'{self.api_server}/commandapi/api/orderGroups', headers=self.get_headers()))
+        return self.check_result(get(url=f"{self.api_server}/commandapi/api/orderGroups", headers=self.get_headers()))
 
     def get_order_group(self, order_group_id):
         """Получение информации о группе заявок
 
         :param str order_group_id: Идентификатор группы заявок
         """
-        return self.check_result(get(url=f'{self.api_server}/commandapi/api/orderGroups{order_group_id}', headers=self.get_headers()))
+        return self.check_result(
+            get(url=f"{self.api_server}/commandapi/api/orderGroups{order_group_id}", headers=self.get_headers())
+        )
 
     def create_order_group(self, orders, execution_policy):
         """Создание группы заявок
@@ -1044,14 +1737,20 @@ class AlorPy:
             'Portfolio' - Идентификатор клиентского портфеля
             'Exchange' - Биржа 'MOEX' или 'SPBX'
             'OrderId' - Идентификатор заявки
-            'Type' - Тип заявки. 'Market' - Рыночная заявка. 'Limit' - Лимитная заявка. 'Stop' - Стоп-заявка. 'StopLimit' - Стоп-лимит заявка
+            'Type' - Тип заявки. 'Market' - Рыночная заявка. 'Limit' - Лимитная заявка. 'Stop' - Стоп-заявка.
+                'StopLimit' - Стоп-лимит заявка
         :param str execution_policy: Тип группы заявок:
             'OnExecuteOrCancel' - Группа отменяется при отмене/выполнении/редактировании любой заявки
-            'IgnoreCancel' - Группа отменяется при исполнении заявки. При отмене или редактировании заявки - заявка удаляется из группы, группа остаётся активной
-            'TriggerBracketOrders' - Группа, содержащая одну лимитную заявку и несколько стопов. Для создания группы, стоп-заявки должны быть созданны с флагом 'Activate = false'. После выполнения лимитной заявки, активируются стоп-заявки
+            'IgnoreCancel' - Группа отменяется при исполнении заявки. При отмене или редактировании заявки - заявка
+            удаляется из группы, группа остаётся активной
+            'TriggerBracketOrders' - Группа, содержащая одну лимитную заявку и несколько стопов. Для создания группы,
+            стоп-заявки должны быть созданны с флагом 'Activate = false'. После выполнения лимитной заявки, активируются
+            стоп-заявки
         """
-        j = {'Orders': orders, 'ExecutionPolicy': execution_policy}
-        return self.check_result(post(url=f'{self.api_server}/commandapi/api/orderGroups', headers=self.get_headers(), json=j))
+        j = {"Orders": orders, "ExecutionPolicy": execution_policy}
+        return self.check_result(
+            post(url=f"{self.api_server}/commandapi/api/orderGroups", headers=self.get_headers(), json=j)
+        )
 
     def edit_order_group(self, order_group_id, orders, execution_policy):
         """Редактирование группы заявок (связывание новых заявок, изменение типа связи)
@@ -1061,43 +1760,62 @@ class AlorPy:
             'Portfolio' - Идентификатор клиентского портфеля
             'Exchange' - Биржа 'MOEX' или 'SPBX'
             'OrderId' - Идентификатор заявки
-            'Type' - Тип заявки. 'Market' - Рыночная заявка. 'Limit' - Лимитная заявка. 'Stop' - Стоп-заявка. 'StopLimit' - Стоп-лимит заявка
+            'Type' - Тип заявки. 'Market' - Рыночная заявка. 'Limit' - Лимитная заявка. 'Stop' - Стоп-заявка.
+                'StopLimit' - Стоп-лимит заявка
         :param str execution_policy: Тип группы заявок:
             'OnExecuteOrCancel' - Группа отменяется при отмене/выполнении/редактировании любой заявки
-            'IgnoreCancel' - Группа отменяется при исполнении заявки. При отмене или редактировании заявки - заявка удаляется из группы, группа остаётся активной
-            'TriggerBracketOrders' - Группа, содержащая одну лимитную заявку и несколько стопов. Для создания группы, стоп-заявки должны быть созданны с флагом 'Activate = false'. После выполнения лимитной заявки, активируются стоп-заявки
+            'IgnoreCancel' - Группа отменяется при исполнении заявки. При отмене или редактировании заявки - заявка
+            удаляется из группы, группа остаётся активной
+            'TriggerBracketOrders' - Группа, содержащая одну лимитную заявку и несколько стопов. Для создания группы,
+            стоп-заявки должны быть созданны с флагом 'Activate = false'. После выполнения лимитной заявки, активируются
+            стоп-заявки
         """
-        j = {'Orders': orders, 'ExecutionPolicy': execution_policy}
-        return self.check_result(put(url=f'{self.api_server}/commandapi/api/orderGroups{order_group_id}', headers=self.get_headers(), json=j))
+        j = {"Orders": orders, "ExecutionPolicy": execution_policy}
+        return self.check_result(
+            put(url=f"{self.api_server}/commandapi/api/orderGroups{order_group_id}", headers=self.get_headers(), json=j)
+        )
 
     def delete_order_group(self, order_group_id):
         """Удаление группы заявок
 
         :param str order_group_id: Идентификатор группы заявок
         """
-        return self.check_result(delete(url=f'{self.api_server}/commandapi/api/orderGroups{order_group_id}', headers=self.get_headers()))
+        return self.check_result(
+            delete(url=f"{self.api_server}/commandapi/api/orderGroups{order_group_id}", headers=self.get_headers())
+        )
 
     # Deprecated Устаревшее
 
     def get_portfolios(self):
         """Получение списка серверов портфелей"""
         # TODO Перевести на декодирование base64 полей agreements и portfolios токена JWT
-        return self.check_result(get(url=f'{self.api_server}/client/v1.0/users/{self.user_name}/portfolios', headers=self.get_headers()))
+        return self.check_result(
+            get(url=f"{self.api_server}/client/v1.0/users/{self.user_name}/portfolios", headers=self.get_headers())
+        )
 
-    def get_money(self, portfolio, exchange, format='Simple'):
+    def get_money(self, portfolio, exchange, format="Simple"):
         """Получение информации по деньгам для выбранного портфеля
 
         :param str portfolio: Идентификатор клиентского портфеля
         :param str exchange: Биржа 'MOEX' или 'SPBX'
         :param str format: Формат принимаемых данных 'Simple', 'Slim', 'Heavy'
         """
-        params = {'format': format}
-        return self.check_result(get(url=f'{self.api_server}/md/v2/clients/legacy/{exchange}/{portfolio}/money', params=params, headers=self.get_headers()))
+        params = {"format": format}
+        return self.check_result(
+            get(
+                url=f"{self.api_server}/md/v2/clients/legacy/{exchange}/{portfolio}/money",
+                params=params,
+                headers=self.get_headers(),
+            )
+        )
 
-    def create_stop_loss_order(self, trade_server_code, account, portfolio, exchange, symbol, side, quantity, stop_price, seconds_order_end=0):
+    def create_stop_loss_order(
+        self, trade_server_code, account, portfolio, exchange, symbol, side, quantity, stop_price, seconds_order_end=0
+    ):
         """Создание стоп-лосс заявки
 
-        :param str trade_server_code: Код торгового сервера 'TRADE' (ценные бумаги), 'ITRADE' (ипотечные ценные бумаги), 'FUT1' (фьючерсы), 'OPT1' (опционы), 'FX1' (валюта)
+        :param str trade_server_code: Код торгового сервера 'TRADE' (ценные бумаги), 'ITRADE' (ипотечные ценные бумаги),
+        'FUT1' (фьючерсы), 'OPT1' (опционы), 'FX1' (валюта)
         :param str account: Счет
         :param str portfolio: Идентификатор клиентского портфеля
         :param str exchange: Биржа 'MOEX' или 'SPBX'
@@ -1108,15 +1826,30 @@ class AlorPy:
         :param int seconds_order_end: Дата и время UTC в секундах завершения сделки
         """
         headers = self.get_headers()
-        headers['X-ALOR-REQID'] = self.get_request_id()  # Уникальный идентификатор запроса
-        j = {'Quantity': abs(quantity), 'Side': side, 'TriggerPrice': stop_price, 'Instrument': {'Symbol': symbol, 'Exchange': exchange},
-             'User': {'Account': account, 'Portfolio': portfolio}, 'OrderEndUnixTime': seconds_order_end}
-        return self.check_result(post(url=f'{self.api_server}/warptrans/{trade_server_code}/v2/client/orders/actions/stopLoss', headers=headers, json=j))
+        headers["X-ALOR-REQID"] = self.get_request_id()  # Уникальный идентификатор запроса
+        j = {
+            "Quantity": abs(quantity),
+            "Side": side,
+            "TriggerPrice": stop_price,
+            "Instrument": {"Symbol": symbol, "Exchange": exchange},
+            "User": {"Account": account, "Portfolio": portfolio},
+            "OrderEndUnixTime": seconds_order_end,
+        }
+        return self.check_result(
+            post(
+                url=f"{self.api_server}/warptrans/{trade_server_code}/v2/client/orders/actions/stopLoss",
+                headers=headers,
+                json=j,
+            )
+        )
 
-    def create_take_profit_order(self, trade_server_code, account, portfolio, exchange, symbol, side, quantity, stop_price, seconds_order_end=0):
+    def create_take_profit_order(
+        self, trade_server_code, account, portfolio, exchange, symbol, side, quantity, stop_price, seconds_order_end=0
+    ):
         """Создание стоп-заявки
 
-        :param str trade_server_code: Код торгового сервера 'TRADE' (ценные бумаги), 'ITRADE' (ипотечные ценные бумаги), 'FUT1' (фьючерсы), 'OPT1' (опционы), 'FX1' (валюта)
+        :param str trade_server_code: Код торгового сервера 'TRADE' (ценные бумаги), 'ITRADE' (ипотечные ценные бумаги),
+        'FUT1' (фьючерсы), 'OPT1' (опционы), 'FX1' (валюта)
         :param str account: Счет
         :param str portfolio: Идентификатор клиентского портфеля
         :param str exchange: Биржа 'MOEX' или 'SPBX'
@@ -1127,15 +1860,40 @@ class AlorPy:
         :param int seconds_order_end: Дата и время UTC в секундах завершения сделки
         """
         headers = self.get_headers()
-        headers['X-ALOR-REQID'] = self.get_request_id()  # Уникальный идентификатор запроса
-        j = {'Quantity': abs(quantity), 'Side': side, 'TriggerPrice': stop_price, 'Instrument': {'Symbol': symbol, 'Exchange': exchange},
-             'User': {'Account': account, 'Portfolio': portfolio}, 'OrderEndUnixTime': seconds_order_end}
-        return self.check_result(post(url=f'{self.api_server}/warptrans/{trade_server_code}/v2/client/orders/actions/takeProfit', headers=headers, json=j))
+        headers["X-ALOR-REQID"] = self.get_request_id()  # Уникальный идентификатор запроса
+        j = {
+            "Quantity": abs(quantity),
+            "Side": side,
+            "TriggerPrice": stop_price,
+            "Instrument": {"Symbol": symbol, "Exchange": exchange},
+            "User": {"Account": account, "Portfolio": portfolio},
+            "OrderEndUnixTime": seconds_order_end,
+        }
+        return self.check_result(
+            post(
+                url=f"{self.api_server}/warptrans/{trade_server_code}/v2/client/orders/actions/takeProfit",
+                headers=headers,
+                json=j,
+            )
+        )
 
-    def create_take_profit_limit_order(self, trade_server_code, account, portfolio, exchange, symbol, side, quantity, stop_price, limit_price, seconds_order_end=0):
+    def create_take_profit_limit_order(
+        self,
+        trade_server_code,
+        account,
+        portfolio,
+        exchange,
+        symbol,
+        side,
+        quantity,
+        stop_price,
+        limit_price,
+        seconds_order_end=0,
+    ):
         """Создание стоп-лимит заявки
 
-        :param str trade_server_code: Код торгового сервера 'TRADE' (ценные бумаги), 'ITRADE' (ипотечные ценные бумаги), 'FUT1' (фьючерсы), 'OPT1' (опционы), 'FX1' (валюта)
+        :param str trade_server_code: Код торгового сервера 'TRADE' (ценные бумаги), 'ITRADE' (ипотечные ценные бумаги),
+        'FUT1' (фьючерсы), 'OPT1' (опционы), 'FX1' (валюта)
         :param str account: Счет
         :param str portfolio: Идентификатор клиентского портфеля
         :param str exchange: Биржа 'MOEX' или 'SPBX'
@@ -1147,15 +1905,41 @@ class AlorPy:
         :param int seconds_order_end: Дата и время UTC в секундах завершения сделки
         """
         headers = self.get_headers()
-        headers['X-ALOR-REQID'] = self.get_request_id()  # Уникальный идентификатор запроса
-        j = {'Quantity': abs(quantity), 'Side': side, 'TriggerPrice': stop_price, 'Price': limit_price, 'Instrument': {'Symbol': symbol, 'Exchange': exchange},
-             'User': {'Account': account, 'Portfolio': portfolio}, 'OrderEndUnixTime': seconds_order_end}
-        return self.check_result(post(url=f'{self.api_server}/warptrans/{trade_server_code}/v2/client/orders/actions/takeProfitLimit', headers=headers, json=j))
+        headers["X-ALOR-REQID"] = self.get_request_id()  # Уникальный идентификатор запроса
+        j = {
+            "Quantity": abs(quantity),
+            "Side": side,
+            "TriggerPrice": stop_price,
+            "Price": limit_price,
+            "Instrument": {"Symbol": symbol, "Exchange": exchange},
+            "User": {"Account": account, "Portfolio": portfolio},
+            "OrderEndUnixTime": seconds_order_end,
+        }
+        return self.check_result(
+            post(
+                url=f"{self.api_server}/warptrans/{trade_server_code}/v2/client/orders/actions/takeProfitLimit",
+                headers=headers,
+                json=j,
+            )
+        )
 
-    def create_stop_loss_limit_order(self, trade_server_code, account, portfolio, exchange, symbol, side, quantity, stop_price, limit_price, seconds_order_end=0):
+    def create_stop_loss_limit_order(
+        self,
+        trade_server_code,
+        account,
+        portfolio,
+        exchange,
+        symbol,
+        side,
+        quantity,
+        stop_price,
+        limit_price,
+        seconds_order_end=0,
+    ):
         """Создание стоп-лосс лимит заявки
 
-        :param str trade_server_code: Код торгового сервера 'TRADE' (ценные бумаги), 'ITRADE' (ипотечные ценные бумаги), 'FUT1' (фьючерсы), 'OPT1' (опционы), 'FX1' (валюта)
+        :param str trade_server_code: Код торгового сервера 'TRADE' (ценные бумаги), 'ITRADE' (ипотечные ценные бумаги),
+        'FUT1' (фьючерсы), 'OPT1' (опционы), 'FX1' (валюта)
         :param str account: Счет
         :param str portfolio: Идентификатор клиентского портфеля
         :param str exchange: Биржа 'MOEX' или 'SPBX'
@@ -1167,15 +1951,41 @@ class AlorPy:
         :param int seconds_order_end: Дата и время UTC в секундах завершения сделки
         """
         headers = self.get_headers()
-        headers['X-ALOR-REQID'] = self.get_request_id()  # Уникальный идентификатор запроса
-        j = {'Quantity': abs(quantity), 'Side': side, 'TriggerPrice': stop_price, 'Price': limit_price, 'Instrument': {'Symbol': symbol, 'Exchange': exchange},
-             'User': {'Account': account, 'Portfolio': portfolio}, 'OrderEndUnixTime': seconds_order_end}
-        return self.check_result(post(url=f'{self.api_server}/warptrans/{trade_server_code}/v2/client/orders/actions/stopLossLimit', headers=headers, json=j))
+        headers["X-ALOR-REQID"] = self.get_request_id()  # Уникальный идентификатор запроса
+        j = {
+            "Quantity": abs(quantity),
+            "Side": side,
+            "TriggerPrice": stop_price,
+            "Price": limit_price,
+            "Instrument": {"Symbol": symbol, "Exchange": exchange},
+            "User": {"Account": account, "Portfolio": portfolio},
+            "OrderEndUnixTime": seconds_order_end,
+        }
+        return self.check_result(
+            post(
+                url=f"{self.api_server}/warptrans/{trade_server_code}/v2/client/orders/actions/stopLossLimit",
+                headers=headers,
+                json=j,
+            )
+        )
 
-    def edit_stop_loss_order(self, trade_server_code, account, portfolio, exchange, order_id, symbol, side, quantity, stop_price, seconds_order_end=0):
+    def edit_stop_loss_order(
+        self,
+        trade_server_code,
+        account,
+        portfolio,
+        exchange,
+        order_id,
+        symbol,
+        side,
+        quantity,
+        stop_price,
+        seconds_order_end=0,
+    ):
         """Изменение стоп-лосс заявки
 
-        :param str trade_server_code: Код торгового сервера 'TRADE' (ценные бумаги), 'ITRADE' (ипотечные ценные бумаги), 'FUT1' (фьючерсы), 'OPT1' (опционы), 'FX1' (валюта)
+        :param str trade_server_code: Код торгового сервера 'TRADE' (ценные бумаги), 'ITRADE' (ипотечные ценные бумаги),
+        'FUT1' (фьючерсы), 'OPT1' (опционы), 'FX1' (валюта)
         :param str account: Счет
         :param str portfolio: Идентификатор клиентского портфеля
         :param str exchange: Биржа 'MOEX' или 'SPBX'
@@ -1187,15 +1997,40 @@ class AlorPy:
         :param int seconds_order_end: Дата и время UTC в секундах завершения сделки
         """
         headers = self.get_headers()
-        headers['X-ALOR-REQID'] = self.get_request_id()  # Уникальный идентификатор запроса
-        j = {'Quantity': abs(quantity), 'Side': side, 'TriggerPrice': stop_price, 'Instrument': {'Symbol': symbol, 'Exchange': exchange},
-             'User': {'Account': account, 'Portfolio': portfolio}, 'OrderEndUnixTime': seconds_order_end}
-        return self.check_result(put(url=f'{self.api_server}/warptrans/{trade_server_code}/v2/client/orders/actions/stopLoss/{order_id}', headers=headers, json=j))
+        headers["X-ALOR-REQID"] = self.get_request_id()  # Уникальный идентификатор запроса
+        j = {
+            "Quantity": abs(quantity),
+            "Side": side,
+            "TriggerPrice": stop_price,
+            "Instrument": {"Symbol": symbol, "Exchange": exchange},
+            "User": {"Account": account, "Portfolio": portfolio},
+            "OrderEndUnixTime": seconds_order_end,
+        }
+        return self.check_result(
+            put(
+                url=f"{self.api_server}/warptrans/{trade_server_code}/v2/client/orders/actions/stopLoss/{order_id}",
+                headers=headers,
+                json=j,
+            )
+        )
 
-    def edit_take_profit_order(self, trade_server_code, account, portfolio, exchange, order_id, symbol, side, quantity, stop_price, seconds_order_end=0):
+    def edit_take_profit_order(
+        self,
+        trade_server_code,
+        account,
+        portfolio,
+        exchange,
+        order_id,
+        symbol,
+        side,
+        quantity,
+        stop_price,
+        seconds_order_end=0,
+    ):
         """Изменение стоп-заявки
 
-        :param str trade_server_code: Код торгового сервера 'TRADE' (ценные бумаги), 'ITRADE' (ипотечные ценные бумаги), 'FUT1' (фьючерсы), 'OPT1' (опционы), 'FX1' (валюта)
+        :param str trade_server_code: Код торгового сервера 'TRADE' (ценные бумаги), 'ITRADE' (ипотечные ценные бумаги),
+        'FUT1' (фьючерсы), 'OPT1' (опционы), 'FX1' (валюта)
         :param str account: Счет
         :param str portfolio: Идентификатор клиентского портфеля
         :param str exchange: Биржа 'MOEX' или 'SPBX'
@@ -1207,15 +2042,41 @@ class AlorPy:
         :param int seconds_order_end: Дата и время UTC в секундах завершения сделки
         """
         headers = self.get_headers()
-        headers['X-ALOR-REQID'] = self.get_request_id()  # Уникальный идентификатор запроса
-        j = {'Quantity': abs(quantity), 'Side': side, 'TriggerPrice': stop_price, 'Instrument': {'Symbol': symbol, 'Exchange': exchange},
-             'User': {'Account': account, 'Portfolio': portfolio}, 'OrderEndUnixTime': seconds_order_end}
-        return self.check_result(put(url=f'{self.api_server}/warptrans/{trade_server_code}/v2/client/orders/actions/takeProfit/{order_id}', headers=headers, json=j))
+        headers["X-ALOR-REQID"] = self.get_request_id()  # Уникальный идентификатор запроса
+        j = {
+            "Quantity": abs(quantity),
+            "Side": side,
+            "TriggerPrice": stop_price,
+            "Instrument": {"Symbol": symbol, "Exchange": exchange},
+            "User": {"Account": account, "Portfolio": portfolio},
+            "OrderEndUnixTime": seconds_order_end,
+        }
+        return self.check_result(
+            put(
+                url=f"{self.api_server}/warptrans/{trade_server_code}/v2/client/orders/actions/takeProfit/{order_id}",
+                headers=headers,
+                json=j,
+            )
+        )
 
-    def edit_take_profit_limit_order(self, trade_server_code, account, portfolio, exchange, order_id, symbol, side, quantity, stop_price, limit_price, seconds_order_end=0):
+    def edit_take_profit_limit_order(
+        self,
+        trade_server_code,
+        account,
+        portfolio,
+        exchange,
+        order_id,
+        symbol,
+        side,
+        quantity,
+        stop_price,
+        limit_price,
+        seconds_order_end=0,
+    ):
         """Изменение стоп-лимит заявки
 
-        :param str trade_server_code: Код торгового сервера 'TRADE' (ценные бумаги), 'ITRADE' (ипотечные ценные бумаги), 'FUT1' (фьючерсы), 'OPT1' (опционы), 'FX1' (валюта)
+        :param str trade_server_code: Код торгового сервера 'TRADE' (ценные бумаги), 'ITRADE' (ипотечные ценные бумаги),
+        'FUT1' (фьючерсы), 'OPT1' (опционы), 'FX1' (валюта)
         :param str account: Счет
         :param str portfolio: Идентификатор клиентского портфеля
         :param str exchange: Биржа 'MOEX' или 'SPBX'
@@ -1228,15 +2089,45 @@ class AlorPy:
         :param int seconds_order_end: Дата и время UTC в секундах завершения сделки
         """
         headers = self.get_headers()
-        headers['X-ALOR-REQID'] = self.get_request_id()  # Уникальный идентификатор запроса
-        j = {'Quantity': abs(quantity), 'Side': side, 'TriggerPrice': stop_price, 'Price': limit_price, 'Instrument': {'Symbol': symbol, 'Exchange': exchange},
-             'User': {'Account': account, 'Portfolio': portfolio}, 'OrderEndUnixTime': seconds_order_end}
-        return self.check_result(put(url=f'{self.api_server}/warptrans/{trade_server_code}/v2/client/orders/actions/takeProfitLimit/{order_id}', headers=headers, json=j))
+        headers["X-ALOR-REQID"] = self.get_request_id()  # Уникальный идентификатор запроса
+        j = {
+            "Quantity": abs(quantity),
+            "Side": side,
+            "TriggerPrice": stop_price,
+            "Price": limit_price,
+            "Instrument": {"Symbol": symbol, "Exchange": exchange},
+            "User": {"Account": account, "Portfolio": portfolio},
+            "OrderEndUnixTime": seconds_order_end,
+        }
+        return self.check_result(
+            put(
+                url=(
+                    f"{self.api_server}/warptrans/{trade_server_code}/v2/client/orders/actions/takeProfitLimit/"
+                    f"{order_id}"
+                ),
+                headers=headers,
+                json=j,
+            )
+        )
 
-    def edit_stop_loss_limit_order(self, trade_server_code, account, portfolio, exchange, order_id, symbol, side, quantity, stop_price, limit_price, seconds_order_end=0):
+    def edit_stop_loss_limit_order(
+        self,
+        trade_server_code,
+        account,
+        portfolio,
+        exchange,
+        order_id,
+        symbol,
+        side,
+        quantity,
+        stop_price,
+        limit_price,
+        seconds_order_end=0,
+    ):
         """Изменение стоп-лосс лимит заявки
 
-        :param str trade_server_code: Код торгового сервера 'TRADE' (ценные бумаги), 'ITRADE' (ипотечные ценные бумаги), 'FUT1' (фьючерсы), 'OPT1' (опционы), 'FX1' (валюта)
+        :param str trade_server_code: Код торгового сервера 'TRADE' (ценные бумаги), 'ITRADE' (ипотечные ценные бумаги),
+        'FUT1' (фьючерсы), 'OPT1' (опционы), 'FX1' (валюта)
         :param str account: Счет
         :param str portfolio: Идентификатор клиентского портфеля
         :param str exchange: Биржа 'MOEX' или 'SPBX'
@@ -1249,23 +2140,46 @@ class AlorPy:
         :param int seconds_order_end: Дата и время UTC в секундах завершения сделки
         """
         headers = self.get_headers()
-        headers['X-ALOR-REQID'] = self.get_request_id()  # Уникальный идентификатор запроса
-        j = {'Quantity': abs(quantity), 'Side': side, 'TriggerPrice': stop_price, 'Price': limit_price, 'Instrument': {'Symbol': symbol, 'Exchange': exchange},
-             'User': {'Account': account, 'Portfolio': portfolio}, 'OrderEndUnixTime': seconds_order_end}
-        return self.check_result(put(url=f'{self.api_server}/warptrans/{trade_server_code}/v2/client/orders/actions/stopLossLimit/{order_id}', headers=headers, json=j))
+        headers["X-ALOR-REQID"] = self.get_request_id()  # Уникальный идентификатор запроса
+        j = {
+            "Quantity": abs(quantity),
+            "Side": side,
+            "TriggerPrice": stop_price,
+            "Price": limit_price,
+            "Instrument": {"Symbol": symbol, "Exchange": exchange},
+            "User": {"Account": account, "Portfolio": portfolio},
+            "OrderEndUnixTime": seconds_order_end,
+        }
+        return self.check_result(
+            put(
+                url=(
+                    f"{self.api_server}/warptrans/{trade_server_code}/v2/client/orders/actions/stopLossLimit/"
+                    f"{order_id}"
+                ),
+                headers=headers,
+                json=j,
+            )
+        )
 
     def delete_stop_order(self, trade_server_code, portfolio, order_id, stop=True):
         """Снятие стоп-заявки
 
-        :param str trade_server_code: Код торгового сервера 'TRADE' (ценные бумаги), 'ITRADE' (ипотечные ценные бумаги), 'FUT1' (фьючерсы), 'OPT1' (опционы), 'FX1' (валюта)
+        :param str trade_server_code: Код торгового сервера 'TRADE' (ценные бумаги), 'ITRADE' (ипотечные ценные бумаги),
+         'FUT1' (фьючерсы), 'OPT1' (опционы), 'FX1' (валюта)
         :param str portfolio: Идентификатор клиентского портфеля
         :param int order_id: Номер заявки
         :param bool stop: Является ли стоп заявкой
         """
         headers = self.get_headers()
-        headers['X-ALOR-REQID'] = self.get_request_id()  # Уникальный идентификатор запроса
-        params = {'portfolio': portfolio, 'stop': stop}
-        return self.check_result(delete(url=f'{self.api_server}/warptrans/{trade_server_code}/v2/client/orders/{order_id}', headers=headers, params=params))
+        headers["X-ALOR-REQID"] = self.get_request_id()  # Уникальный идентификатор запроса
+        params = {"portfolio": portfolio, "stop": stop}
+        return self.check_result(
+            delete(
+                url=f"{self.api_server}/warptrans/{trade_server_code}/v2/client/orders/{order_id}",
+                headers=headers,
+                params=params,
+            )
+        )
 
     def stop_orders_get_and_subscribe(self, portfolio, exchange) -> str:
         """Подписка на информацию о текущих стоп-заявках на рынке для выбранных биржи и финансового инструмента
@@ -1274,7 +2188,12 @@ class AlorPy:
         :param str exchange: Биржа 'MOEX' или 'SPBX'
         :return: Уникальный идентификатор подписки
         """
-        request = {'opcode': 'StopOrdersGetAndSubscribe', 'exchange': exchange, 'portfolio': portfolio, 'format': 'Simple'}  # Запрос на подписку
+        request = {
+            "opcode": "StopOrdersGetAndSubscribe",
+            "exchange": exchange,
+            "portfolio": portfolio,
+            "format": "Simple",
+        }  # Запрос на подписку
         return self.subscribe(request)  # Отправляем запрос, возвращаем уникальный идентификатор подписки
 
     # Выход и закрытие
@@ -1296,25 +2215,29 @@ class AlorPy:
     def get_jwt_token(self):
         """Получение, выдача, обновление JWT токена"""
         now = int(datetime.timestamp(datetime.now()))  # Текущая дата и время в виде UNIX времени в секундах
-        if self.jwt_token is None or now - self.jwt_token_issued > self.jwt_token_ttl:  # Если токен JWT не был выдан или был просрочен
-            response = post(url=f'{self.oauth_server}/refresh', params={'token': self.refresh_token})  # Запрашиваем новый JWT токен с сервера аутентификации
+        if (
+            self.jwt_token is None or now - self.jwt_token_issued > self.jwt_token_ttl
+        ):  # Если токен JWT не был выдан или был просрочен
+            response = post(
+                url=f"{self.oauth_server}/refresh", params={"token": self.refresh_token}
+            )  # Запрашиваем новый JWT токен с сервера аутентификации
             if response.status_code != 200:  # Если при получении токена возникла ошибка
-                self.OnError(f'Ошибка получения JWT токена: {response.status_code}')  # Событие ошибки
+                self.OnError(f"Ошибка получения JWT токена: {response.status_code}")  # Событие ошибки
                 self.jwt_token = None  # Сбрасываем токен JWT
                 self.jwt_token_issued = 0  # Сбрасываем время выдачи токена JWT
             else:  # Токен получен
                 token = response.json()  # Читаем данные JSON
-                self.jwt_token = token.get('AccessToken')  # Получаем токен JWT
+                self.jwt_token = token.get("AccessToken")  # Получаем токен JWT
                 self.jwt_token_issued = now  # Дата выдачи токена JWT
         return self.jwt_token
 
     def get_headers(self):
         """Получение хедеров для запросов"""
-        return {'Content-Type': 'application/json', 'Authorization': f'Bearer {self.get_jwt_token()}'}
+        return {"Content-Type": "application/json", "Authorization": f"Bearer {self.get_jwt_token()}"}
 
     def get_request_id(self):
         """Получение уникального кода запроса"""
-        return f'{self.user_name}{time_ns()}'  # Логин и текущее время в наносекундах, прошедших с 01.01.1970 в UTC
+        return f"{self.user_name}{time_ns()}"  # Логин и текущее время в наносекундах, прошедших с 01.01.1970 в UTC
 
     def check_result(self, response):
         """Анализ результата запроса
@@ -1323,11 +2246,15 @@ class AlorPy:
         :return: Справочник из JSON, текст, None в случае веб ошибки
         """
         if response.status_code != 200:  # Если статус ошибки
-            self.OnError(f'Ошибка сервера: {response.status_code} {response.content.decode("utf-8")} {response.request}')  # Событие ошибки
+            self.OnError(
+                f'Ошибка сервера: {response.status_code} {response.content.decode("utf-8")} {response.request}'
+            )  # Событие ошибки
             return None  # то возвращаем пустое значение
-        content = response.content.decode('utf-8')  # Значение
+        content = response.content.decode("utf-8")  # Значение
         try:
-            return loads(content)  # Декодируем JSON в справочник, возвращаем его. Ошибки также могут приходить в виде JSON
+            return loads(
+                content
+            )  # Декодируем JSON в справочник, возвращаем его. Ошибки также могут приходить в виде JSON
         except JSONDecodeError:  # Если произошла ошибка при декодировании JSON, например, при удалении заявок
             return content  # то возвращаем значение в виде текста
 
@@ -1339,7 +2266,9 @@ class AlorPy:
         :param request: Запрос JSON
         :return: JSON, текст, None в случае веб ошибки
         """
-        response = get_event_loop().run_until_complete(self.send_websocket_async(request))  # Запускаем асинхронную фукнцию с параметрами. Дожидаемся выполнения. Получаем результат
+        response = get_event_loop().run_until_complete(
+            self.send_websocket_async(request)
+        )  # Запускаем асинхронную фукнцию с параметрами. Дожидаемся выполнения. Получаем результат
         return self.check_websocket_result(response)  # Возвращаем результат после анализа
 
     async def send_websocket_async(self, request):
@@ -1350,7 +2279,7 @@ class AlorPy:
         """
         if not self.cws_socket:  # Если не было подключения к серверу WebSocket
             self.cws_socket = await connect(self.cws_server)  # то пробуем к нему подключиться
-        request['guid'] = str(uuid4())  # Получаем уникальный идентификатор запроса, ставим его в запрос
+        request["guid"] = str(uuid4())  # Получаем уникальный идентификатор запроса, ставим его в запрос
         await self.cws_socket.send(dumps(request))  # Переводим JSON в строку, отправляем запрос
         return await self.cws_socket.recv()  # Дожидаемся ответа, возвращаем его
 
@@ -1361,10 +2290,12 @@ class AlorPy:
         :return: JSON, текст, None в случае веб ошибки
         """
         try:
-            json_response = loads(response)  # Декодируем JSON в справочник, возвращаем его. Ошибки также могут приходить в виде JSON
+            json_response = loads(
+                response
+            )  # Декодируем JSON в справочник, возвращаем его. Ошибки также могут приходить в виде JSON
         except JSONDecodeError:  # Если произошла ошибка при декодировании JSON, например, при удалении заявок
             return response  # то возвращаем значение в виде текста
-        http_code = json_response['httpCode']  # Код 200 или ошибки
+        http_code = json_response["httpCode"]  # Код 200 или ошибки
         if http_code != 200:  # Если в результате запроса произошла ошибка
             self.OnError(f'Ошибка сервера: {http_code} {response["message"]}')  # Событие ошибки
             return None  # то возвращаем пустое значение
@@ -1385,7 +2316,8 @@ class AlorPy:
         if not self.ws_ready:  # Если WebSocket не готов принимать запросы
             self.OnEntering()  # Событие начала входа (Thread)
             thread = Thread(target=run, args=(self.websocket_async(),))  # Создаем поток управления подписками
-            # thread = Thread(target=self.loop.run_until_complete, args=(self.websocket_async(),))  # Создаем поток управления подписками
+            # Создаем поток управления подписками
+            # thread = Thread(target=self.loop.run_until_complete, args=(self.websocket_async(),))
             thread.start()  # Запускаем его TODO Бывает ошибка cannot schedule new futures after shutdown
             # self.loop.create_task(self.websocket_async())
         while not self.ws_ready:  # Подключение к серверу WebSocket выполняется в отдельном потоке
@@ -1400,14 +2332,16 @@ class AlorPy:
         """Запуск и управление задачей подписок"""
         self.OnEnter()  # Событие входа (Thread)
         while True:  # Будем держать соединение с сервером WebSocket до отмены
-            self.ws_task = create_task(self.websocket_handler())  # Запускаем задачу (Task) подключения к серверу WebSocket и получения с него подписок
+            self.ws_task = create_task(
+                self.websocket_handler()
+            )  # Запускаем задачу (Task) подключения к серверу WebSocket и получения с него подписок
             try:
                 await self.ws_task  # Ожидаем отмены задачи
             except CancelledError:  # Если задачу отменили
                 break  # то выходим, дальше не продолжаем
         self.OnExit()  # Событие выхода (Thread)
 
-    async def websocket_handler(self):
+    async def websocket_handler(self):  # noqa: C901
         """
         - Подключение к серверу WebSocket
         - Переподключение к серверу WebSocket. Возобновление подписок, если требуется
@@ -1434,72 +2368,76 @@ class AlorPy:
                     response = loads(response_json)  # Переводим JSON в словарь
                 except JSONDecodeError:  # Если вместо JSON сообщений получаем текст (проверка на всякий случай)
                     continue  # то его не разбираем, пропускаем
-                if 'data' not in response:  # Если пришло сервисное сообщение о подписке/отписке
+                if "data" not in response:  # Если пришло сервисное сообщение о подписке/отписке
                     continue  # то его не разбираем, пропускаем
-                guid = response['guid']  # GUID подписки
+                guid = response["guid"]  # GUID подписки
                 if guid not in self.subscriptions:  # Если подписка не найдена
                     continue  # то мы не можем сказать, что это за подписка, пропускаем ее
                 subscription = self.subscriptions[guid]  # Поиск подписки по GUID
-                opcode = subscription['opcode']  # Разбираем по типу подписки
-                if opcode == 'OrderBookGetAndSubscribe':  # Биржевой стакан
+                opcode = subscription["opcode"]  # Разбираем по типу подписки
+                if opcode == "OrderBookGetAndSubscribe":  # Биржевой стакан
                     self.OnChangeOrderBook(response)
-                elif opcode == 'BarsGetAndSubscribe':  # Новый бар
-                    seconds = response['data']['time']  # Время пришедшего бара
-                    if subscription['mode'] == 0:  # История
-                        if seconds != subscription['last']:  # Если пришел следующий бар истории
-                            subscription['last'] = seconds  # то запоминаем его
-                            if subscription['prev'] is not None:  # Мы не знаем, когда придет первый дубль
-                                self.OnNewBar(subscription['prev'])  # Поэтому, выдаем бар с задержкой на 1
+                elif opcode == "BarsGetAndSubscribe":  # Новый бар
+                    seconds = response["data"]["time"]  # Время пришедшего бара
+                    if subscription["mode"] == 0:  # История
+                        if seconds != subscription["last"]:  # Если пришел следующий бар истории
+                            subscription["last"] = seconds  # то запоминаем его
+                            if subscription["prev"] is not None:  # Мы не знаем, когда придет первый дубль
+                                self.OnNewBar(subscription["prev"])  # Поэтому, выдаем бар с задержкой на 1
                         else:  # Если пришел дубль
-                            subscription['same'] = 2  # Есть 2 одинаковых бара
-                            subscription['mode'] = 1  # Переходим к обработке первого несформированного бара
-                    elif subscription['mode'] == 1:  # Первый несформированный бар
-                        if subscription['same'] < 3:  # Если уже есть 2 одинаковых бара
-                            subscription['same'] += 1  # то следующий бар будет таким же. 3 одинаковых бара
+                            subscription["same"] = 2  # Есть 2 одинаковых бара
+                            subscription["mode"] = 1  # Переходим к обработке первого несформированного бара
+                    elif subscription["mode"] == 1:  # Первый несформированный бар
+                        if subscription["same"] < 3:  # Если уже есть 2 одинаковых бара
+                            subscription["same"] += 1  # то следующий бар будет таким же. 3 одинаковых бара
                         else:  # Если пришел следующий бар
-                            subscription['last'] = seconds  # то запоминаем бар
-                            subscription['same'] = 1  # Повторов нет
-                            subscription['mode'] = 2  # Переходим к обработке новых баров
-                            self.OnNewBar(subscription['prev'])
-                    elif subscription['mode'] == 2:  # Новый бар
-                        if subscription['same'] < 2:  # Если нет повторов
-                            subscription['same'] += 1  # то следующий бар будет таким же. 2 одинаковых бара
+                            subscription["last"] = seconds  # то запоминаем бар
+                            subscription["same"] = 1  # Повторов нет
+                            subscription["mode"] = 2  # Переходим к обработке новых баров
+                            self.OnNewBar(subscription["prev"])
+                    elif subscription["mode"] == 2:  # Новый бар
+                        if subscription["same"] < 2:  # Если нет повторов
+                            subscription["same"] += 1  # то следующий бар будет таким же. 2 одинаковых бара
                         else:  # Если пришел следующий бар
-                            subscription['last'] = seconds  # то запоминаем бар
-                            subscription['same'] = 1  # Повторов нет
-                            self.OnNewBar(subscription['prev'])
-                    subscription['prev'] = response  # Запоминаем пришедший бар
-                elif opcode == 'QuotesSubscribe':  # Котировки
+                            subscription["last"] = seconds  # то запоминаем бар
+                            subscription["same"] = 1  # Повторов нет
+                            self.OnNewBar(subscription["prev"])
+                    subscription["prev"] = response  # Запоминаем пришедший бар
+                elif opcode == "QuotesSubscribe":  # Котировки
                     self.OnNewQuotes(response)
-                elif opcode == 'AllTradesGetAndSubscribe':  # Все сделки
+                elif opcode == "AllTradesGetAndSubscribe":  # Все сделки
                     self.OnAllTrades(response)
-                elif opcode == 'PositionsGetAndSubscribeV2':  # Позиции по ценным бумагам и деньгам
+                elif opcode == "PositionsGetAndSubscribeV2":  # Позиции по ценным бумагам и деньгам
                     self.OnPosition(response)
-                elif opcode == 'SummariesGetAndSubscribeV2':  # Сводная информация по портфелю
+                elif opcode == "SummariesGetAndSubscribeV2":  # Сводная информация по портфелю
                     self.OnSummary(response)
-                elif opcode == 'RisksGetAndSubscribe':  # Портфельные риски
+                elif opcode == "RisksGetAndSubscribe":  # Портфельные риски
                     self.OnRisk(response)
-                elif opcode == 'SpectraRisksGetAndSubscribe':  # Риски срочного рынка (FORTS)
+                elif opcode == "SpectraRisksGetAndSubscribe":  # Риски срочного рынка (FORTS)
                     self.OnSpectraRisk(response)
-                elif opcode == 'TradesGetAndSubscribeV2':  # Сделки
+                elif opcode == "TradesGetAndSubscribeV2":  # Сделки
                     self.OnTrade(response)
-                elif opcode == 'StopOrdersGetAndSubscribe':  # Стоп заявки
+                elif opcode == "StopOrdersGetAndSubscribe":  # Стоп заявки
                     self.OnStopOrder(response)
-                elif opcode == 'StopOrdersGetAndSubscribeV2':  # Стоп заявки v2
+                elif opcode == "StopOrdersGetAndSubscribeV2":  # Стоп заявки v2
                     self.OnStopOrderV2(response)
-                elif opcode == 'OrdersGetAndSubscribeV2':  # Заявки
+                elif opcode == "OrdersGetAndSubscribeV2":  # Заявки
                     self.OnOrder(response)
-                elif opcode == 'InstrumentsGetAndSubscribeV2':  # Информация о финансовых инструментах
+                elif opcode == "InstrumentsGetAndSubscribeV2":  # Информация о финансовых инструментах
                     self.OnSymbol(response)
         except CancelledError:  # Задачу отменили
             self.OnCancel()  # Событие отмены и завершения (Task)
             raise  # Передаем исключение на родительский уровень WebSocketHandler
         except ConnectionClosed:  # Отключились от сервера WebSockets
             self.OnDisconnect()  # Событие отключения от сервера (Task)
-        except (OSError, TimeoutError, MaxRetryError):  # При системной ошибке, таймауте на websockets, достижении максимального кол-ва попыток подключения
+        except (
+            OSError,
+            TimeoutError,
+            MaxRetryError,
+        ):  # При системной ошибке, таймауте на websockets, достижении максимального кол-ва попыток подключения
             self.OnTimeout()  # Событие таймаута/максимального кол-ва попыток подключения (Task)
         except Exception as ex:  # При других типах ошибок
-            self.OnError(f'Ошибка {ex}')  # Событие ошибки (Task)
+            self.OnError(f"Ошибка {ex}")  # Событие ошибки (Task)
         finally:
             self.ws_ready = False  # Не готов принимать запросы
             self.ws_socket = None  # Сбрасываем подключение
@@ -1512,14 +2450,16 @@ class AlorPy:
         :return: Справочник из JSON, текст, None в случае веб ошибки
         """
         subscription_request = request.copy()  # Копируем запрос в подписку
-        if subscription_request['opcode'] == 'BarsGetAndSubscribe':  # Для подписки на новые бары добавляем дополнительные атрибуты и их значения по умолчанию
-            subscription_request['mode'] = 0  # 0 - история, 1 - первый несформированный бар, 2 - новый бар
-            subscription_request['last'] = 0  # Время последнего бара
-            subscription_request['same'] = 1  # Кол-во повторяющихся баров
-            subscription_request['prev'] = None  # Дата и время предыдущего бара UTC в секундах
+        if (
+            subscription_request["opcode"] == "BarsGetAndSubscribe"
+        ):  # Для подписки на новые бары добавляем дополнительные атрибуты и их значения по умолчанию
+            subscription_request["mode"] = 0  # 0 - история, 1 - первый несформированный бар, 2 - новый бар
+            subscription_request["last"] = 0  # Время последнего бара
+            subscription_request["same"] = 1  # Кол-во повторяющихся баров
+            subscription_request["prev"] = None  # Дата и время предыдущего бара UTC в секундах
         self.subscriptions[guid] = subscription_request  # Заносим копию подписки в справочник
-        request['token'] = self.get_jwt_token()  # Получаем JWT токен, ставим его в запрос
-        request['guid'] = guid  # Уникальный идентификатор подписки тоже ставим в запрос
+        request["token"] = self.get_jwt_token()  # Получаем JWT токен, ставим его в запрос
+        request["guid"] = guid  # Уникальный идентификатор подписки тоже ставим в запрос
         await self.ws_socket.send(dumps(request))  # Отправляем запрос
 
     # Функции конвертации
@@ -1532,10 +2472,12 @@ class AlorPy:
         :param bool reload: Получить информацию из Алор
         :return: Значение из кэша/Алор или None, если тикер не найден
         """
-        if reload or (exchange, symbol) not in self.symbols:  # Если нужно получить информацию из Алор или нет информации о тикере в справочнике
+        if (
+            reload or (exchange, symbol) not in self.symbols
+        ):  # Если нужно получить информацию из Алор или нет информации о тикере в справочнике
             symbol_info = self.get_symbol(exchange, symbol)  # Получаем информацию о тикере из Алор
             if not symbol_info:  # Если тикер не найден
-                print(f'Информация о {exchange}.{symbol} не найдена')
+                print(f"Информация о {exchange}.{symbol} не найдена")
                 return None  # то возвращаем пустое значение
             self.symbols[(exchange, symbol)] = symbol_info  # Заносим информацию о тикере в справочник
         return self.symbols[(exchange, symbol)]  # Возвращаем значение из справочника
@@ -1547,12 +2489,12 @@ class AlorPy:
         :param str dataname: Название тикера
         :return: Код площадки и код тикера
         """
-        symbol_parts = dataname.split('.')  # По разделителю пытаемся разбить тикер на части
+        symbol_parts = dataname.split(".")  # По разделителю пытаемся разбить тикер на части
         if len(symbol_parts) >= 2:  # Если тикер задан в формате <Биржа>.<Код тикера>
             exchange = symbol_parts[0]  # Биржа
-            symbol = '.'.join(symbol_parts[1:])  # Код тикера
+            symbol = ".".join(symbol_parts[1:])  # Код тикера
         else:  # Если тикер задан без биржи
-            exchange = 'MOEX'  # Биржа по умолчанию
+            exchange = "MOEX"  # Биржа по умолчанию
             symbol = dataname  # Код тикера
         return exchange, symbol  # Возвращаем биржу и код тикера
 
@@ -1564,7 +2506,7 @@ class AlorPy:
         :param str symbol: Тикер
         :return: Название тикера
         """
-        return f'{exchange}.{symbol}'
+        return f"{exchange}.{symbol}"
 
     def price_to_alor_price(self, exchange, symbol, price) -> float:
         """Перевод цены в цену Алор
@@ -1575,10 +2517,10 @@ class AlorPy:
         :return: Цена в Алор
         """
         si = self.get_symbol_info(exchange, symbol)  # Информация о тикере
-        primary_board = si['primary_board']  # Рынок тикера
-        if primary_board == 'TQOB':  # Для рынка облигаций
+        primary_board = si["primary_board"]  # Рынок тикера
+        if primary_board == "TQOB":  # Для рынка облигаций
             price /= 10  # цену делим на 10
-        min_step = si['minstep']  # Минимальный шаг цены
+        min_step = si["minstep"]  # Минимальный шаг цены
         decimals = int(log10(1 / min_step) + 0.99)  # Из шага цены получаем кол-во десятичных знаков
         return round(price, decimals)  # Округляем цену
 
@@ -1591,8 +2533,8 @@ class AlorPy:
         :return: Цена
         """
         si = self.get_symbol_info(exchange, symbol)  # Информация о тикере
-        primary_board = si['primary_board']  # Рынок тикера
-        if primary_board == 'TQOB':  # Для рынка облигаций
+        primary_board = si["primary_board"]  # Рынок тикера
+        if primary_board == "TQOB":  # Для рынка облигаций
             price *= 10  # цену умножаем на 10
         return price
 
