@@ -26,10 +26,8 @@ class Alor:
     requests.adapters.DEFAULT_POOL_TIMEOUT = 10  # Настройка таймауту запроса в секундах
     tz_msk = timezone("Europe/Moscow")  # Время UTC будем приводить к московскому времени
     jwt_token_ttl = 60  # Время жизни токена JWT в секундах
-    exchanges = (
-        "MOEX",
-        "SPBX",
-    )  # Биржи
+    # Биржи
+    exchanges = ("MOEX", "SPBX")
     logger = logging.getLogger("Alor")  # Будем вести лог
 
     def __init__(self, refresh_token: str, demo: bool = False):
@@ -80,6 +78,7 @@ class Alor:
         self.jwt_token_issued = 0  # UNIX время в секундах выдачи токена JWT
         self.accounts = list()  # Счета (портфели по договорам)
         self.get_jwt_token()  # Получаем токен JWT
+
         if self.jwt_token_decoded:
             all_agreements = self.jwt_token_decoded["agreements"].split(" ")  # Договоры
             all_portfolios = self.jwt_token_decoded["portfolios"].split(" ")  # Портфели
@@ -93,6 +92,7 @@ class Alor:
                     )  # Добавляем договор/портфель/биржи
                 i += 1  # Смещаем на следующий договор
                 j += 3  # Смещаем на начальную позицию портфелей для следующего договора
+
         self.subscriptions = {}  # Справочник подписок. Для возобновления всех подписок после перезагрузки сервера Алор
         self.symbols = {}  # Справочник тикеров
 
@@ -2595,22 +2595,22 @@ class Alor:
         if not response:  # Если ответ не пришел. Например, при таймауте
             self.on_error("Ошибка сервера: Таймаут")  # Событие ошибки
             return None  # то возвращаем пустое значение
+
         content = response.content.decode("utf-8")  # Результат запроса
         if response.status_code != 200:  # Если статус ошибки
             self.on_error(
                 f"Ошибка сервера: {response.status_code} Запрос: {response.request.path_url} Ответ: {content}"
             )  # Событие ошибки
             return None  # то возвращаем пустое значение
-        # self.logger.debug(f'Запрос: {response.request.path_url} Ответ: {content}')
+
+        self.logger.debug(f"Запрос: {response.request.path_url} Ответ: {content}")
         try:
-            return loads(
-                content
-            )  # Декодируем JSON в справочник, возвращаем его. Ошибки также могут приходить в виде JSON
+            # Декодируем JSON в справочник, возвращаем его. Ошибки также могут приходить в виде JSON
+            return loads(content)
         except JSONDecodeError:  # Если произошла ошибка при декодировании JSON, например, при удалении заявок
             return content  # то возвращаем значение в виде текста
 
     # Запросы WebSocket
-
     def send_websocket(self, request):
         """Отправка запроса WebSocket
 
