@@ -9,4 +9,4 @@ dependencies = [
 ]
 description = "Библиотека-обертка, которая позволяет работать с функционалом Alor OpenAPI V2 брокера Алор из Python"
 readme = "README.md"
-version = "2024.01.17"
+version = "2024.03.07"
